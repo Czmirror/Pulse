@@ -1,0 +1,40 @@
+[package]
+name = "pulse"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "pulse"
+path = "src/main.rs"
+
+[dependencies]
+bevy = { version = "0.15", default-features = false, features = [
+    "bevy_asset",
+    "bevy_color",
+    "bevy_core_pipeline",
+    "bevy_render",
+    "bevy_sprite",
+    "bevy_text",
+    "bevy_ui",
+    "bevy_winit",
+    "bevy_state",
+    "default_font",
+    "webgl2",
+    "x11",
+] }
+wasm-bindgen = "0.2"
+web-sys = { version = "0.3", features = ["Window"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2"
+getrandom = { version = "0.3", features = ["wasm_js"] }
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[profile.dev]
+opt-level = 1
