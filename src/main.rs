@@ -23,6 +23,10 @@ const GOOD_WINDOW: f32 = 26.0;
 
 const MAX_COMBO_MULTIPLIER: u32 = 4;
 
+// Game URL used in the share tweet (referenced only in WASM builds)
+#[cfg(target_arch = "wasm32")]
+const GAME_URL: &str = "https://czmirror.github.io/Pulse/";
+
 // Colors
 const BG_COLOR: Color = Color::srgb(0.04, 0.04, 0.08);
 const TARGET_COLOR: Color = Color::srgb(0.35, 0.35, 0.55);
@@ -30,6 +34,16 @@ const PULSE_COLOR: Color = Color::srgb(0.45, 0.75, 1.0);
 const PERFECT_COLOR: Color = Color::srgb(1.0, 0.92, 0.2);
 const GOOD_COLOR: Color = Color::srgb(0.3, 1.0, 0.5);
 const MISS_COLOR: Color = Color::srgb(1.0, 0.3, 0.3);
+
+// Retry button colors
+const RETRY_NORMAL: Color = Color::srgb(0.12, 0.12, 0.20);
+const RETRY_HOVER: Color = Color::srgb(0.22, 0.22, 0.38);
+const RETRY_PRESS: Color = Color::srgb(0.06, 0.06, 0.12);
+
+// Share button colors
+const SHARE_NORMAL: Color = Color::srgb(0.05, 0.10, 0.22);
+const SHARE_HOVER: Color = Color::srgb(0.10, 0.22, 0.45);
+const SHARE_PRESS: Color = Color::srgb(0.02, 0.05, 0.12);
 
 // ── States ───────────────────────────────────────────────────────────────────
 
@@ -105,6 +119,14 @@ struct HudRoot;
 #[derive(Component)]
 struct TargetRing;
 
+/// Retry button on the game-over screen
+#[derive(Component)]
+struct RetryButton;
+
+/// Share-to-X button on the game-over screen (spawned only on WASM)
+#[derive(Component)]
+struct ShareButton;
+
 // ── App ──────────────────────────────────────────────────────────────────────
 
 fn main() {
@@ -153,7 +175,8 @@ fn main() {
         .add_systems(OnExit(AppState::GameOver), despawn_with::<GameOverScreen>)
         .add_systems(
             Update,
-            game_over_input.run_if(in_state(AppState::GameOver)),
+            (game_over_input, retry_button_system, share_button_system)
+                .run_if(in_state(AppState::GameOver)),
         )
         .run();
 }
@@ -188,6 +211,39 @@ fn spawn_judgment_text(commands: &mut Commands, label: &str, color: Color) {
         Transform::from_xyz(0.0, 20.0, 10.0),
         JudgmentText { timer: 0.8 },
     ));
+}
+
+/// Spawn a styled UI button with a text label.
+fn spawn_button<M: Component>(
+    parent: &mut ChildBuilder,
+    label: &str,
+    bg: Color,
+    border: Color,
+    marker: M,
+) {
+    parent
+        .spawn((
+            Button,
+            Node {
+                padding: UiRect::axes(Val::Px(22.0), Val::Px(11.0)),
+                border: UiRect::all(Val::Px(2.0)),
+                ..default()
+            },
+            BackgroundColor(bg),
+            BorderColor(border),
+            BorderRadius::all(Val::Px(8.0)),
+            marker,
+        ))
+        .with_children(|b| {
+            b.spawn((
+                Text::new(label),
+                TextFont {
+                    font_size: 20.0,
+                    ..default()
+                },
+                TextColor(Color::WHITE),
+            ));
+        });
 }
 
 // ── Title ────────────────────────────────────────────────────────────────────
@@ -520,7 +576,7 @@ fn setup_game_over(mut commands: Commands, data: Res<GameData>) {
                 flex_direction: FlexDirection::Column,
                 align_items: AlignItems::Center,
                 justify_content: JustifyContent::Center,
-                row_gap: Val::Px(18.0),
+                row_gap: Val::Px(16.0),
                 ..default()
             },
             GameOverScreen,
@@ -558,30 +614,131 @@ fn setup_game_over(mut commands: Commands, data: Res<GameData>) {
                 },
                 TextColor(Color::srgb(1.0, 0.9, 0.3)),
             ));
+
+            // ── Button row ───────────────────────────────────────────────────
+            p.spawn(Node {
+                flex_direction: FlexDirection::Row,
+                column_gap: Val::Px(12.0),
+                margin: UiRect::top(Val::Px(8.0)),
+                ..default()
+            })
+            .with_children(|row| {
+                // Retry button (always shown)
+                spawn_button(
+                    row,
+                    "Retry",
+                    RETRY_NORMAL,
+                    Color::srgb(0.4, 0.4, 0.6),
+                    RetryButton,
+                );
+
+                // Share button (WASM only)
+                #[cfg(target_arch = "wasm32")]
+                spawn_button(
+                    row,
+                    "𝕏  Share",
+                    SHARE_NORMAL,
+                    Color::srgb(0.2, 0.4, 0.9),
+                    ShareButton,
+                );
+            });
+
             p.spawn((
-                Text::new("Tap / Click to Retry"),
+                Text::new("Space / Touch to Retry"),
                 TextFont {
-                    font_size: 24.0,
+                    font_size: 16.0,
                     ..default()
                 },
-                TextColor(Color::srgb(0.6, 0.6, 0.9)),
+                TextColor(Color::srgb(0.4, 0.4, 0.6)),
             ));
         });
 }
 
+/// Restart the game via keyboard / touch / RetryButton click.
+/// Raw mouse click is intentionally excluded to avoid conflicting with UI buttons.
 fn game_over_input(
-    mouse: Res<ButtonInput<MouseButton>>,
     touch: Res<Touches>,
     keys: Res<ButtonInput<KeyCode>>,
+    retry_q: Query<&Interaction, (Changed<Interaction>, With<RetryButton>)>,
     mut next: ResMut<NextState<AppState>>,
     mut data: ResMut<GameData>,
 ) {
-    if mouse.just_pressed(MouseButton::Left)
-        || touch.any_just_pressed()
+    let retry = touch.any_just_pressed()
         || keys.just_pressed(KeyCode::Space)
         || keys.just_pressed(KeyCode::Enter)
-    {
+        || retry_q.iter().any(|i| *i == Interaction::Pressed);
+
+    if retry {
         data.reset();
         next.set(AppState::Playing);
     }
+}
+
+/// Animate the Retry button on hover / press.
+fn retry_button_system(
+    mut q: Query<(&Interaction, &mut BackgroundColor), (Changed<Interaction>, With<RetryButton>)>,
+) {
+    for (interaction, mut bg) in &mut q {
+        bg.0 = match interaction {
+            Interaction::Pressed => RETRY_PRESS,
+            Interaction::Hovered => RETRY_HOVER,
+            Interaction::None => RETRY_NORMAL,
+        };
+    }
+}
+
+/// Animate the Share button and open the tweet URL on press (WASM only).
+fn share_button_system(
+    mut q: Query<(&Interaction, &mut BackgroundColor), (Changed<Interaction>, With<ShareButton>)>,
+    data: Res<GameData>,
+) {
+    for (interaction, mut bg) in &mut q {
+        bg.0 = match interaction {
+            Interaction::Pressed => {
+                open_tweet(data.score);
+                SHARE_PRESS
+            }
+            Interaction::Hovered => SHARE_HOVER,
+            Interaction::None => SHARE_NORMAL,
+        };
+    }
+}
+
+// ── X (Twitter) share ─────────────────────────────────────────────────────────
+
+/// Open the X / Twitter intent URL in a new tab.
+/// Compiled only for WASM; on native this is an empty stub.
+#[cfg(target_arch = "wasm32")]
+fn open_tweet(score: u32) {
+    let text = format!(
+        "🎵 PULSE - Score: {score}\nシンプルなリズムゲームに挑戦！\n{GAME_URL}\n#PULSE #ゲーム制作 #bevy"
+    );
+    let url = format!(
+        "https://twitter.com/intent/tweet?text={}",
+        percent_encode(&text)
+    );
+    if let Some(window) = web_sys::window() {
+        let _ = window.open_with_url_and_target(&url, "_blank");
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn open_tweet(_score: u32) {}
+
+/// Percent-encode a string for use in a URL query parameter.
+/// Encodes everything except unreserved characters (RFC 3986).
+#[cfg(target_arch = "wasm32")]
+fn percent_encode(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() * 3);
+    for byte in s.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(byte as char);
+            }
+            _ => {
+                out.push_str(&format!("%{byte:02X}"));
+            }
+        }
+    }
+    out
 }
