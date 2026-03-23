@@ -713,7 +713,19 @@ fn handle_input(
             commands.entity(entity).despawn_recursive();
             ("GOOD", 50u32)
         }
-        _ => ("MISS", 0u32),
+        // Pulse exists but outside any judgment window.
+        // If it already escaped past the GOOD window, mark it as missed now so
+        // miss_check does NOT fire for the same pulse later in this frame
+        // (which would produce a second MissEvent and doubled miss SFX).
+        Some((entity, _)) => {
+            if let Ok((_, mut p)) = pulses.get_mut(entity) {
+                if p.radius < TARGET_RADIUS - GOOD_WINDOW {
+                    p.missed = true;
+                }
+            }
+            ("MISS", 0u32)
+        }
+        None => ("MISS", 0u32),
     };
 
     let color = match judgment {
