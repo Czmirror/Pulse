@@ -10,6 +10,7 @@ path = "src/main.rs"
 [dependencies]
 bevy = { version = "0.15", default-features = false, features = [
     "bevy_asset",
+    "bevy_audio",
     "bevy_color",
     "bevy_core_pipeline",
     "bevy_render",
@@ -19,6 +20,7 @@ bevy = { version = "0.15", default-features = false, features = [
     "bevy_winit",
     "bevy_state",
     "default_font",
+    "wav",
     "webgl2",
     "x11",
 ] }

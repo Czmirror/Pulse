@@ -1,4 +1,5 @@
-use bevy::{prelude::*, window::WindowResolution};
+use bevy::{audio::{PlaybackMode, Volume}, prelude::*, window::WindowResolution};
+use std::f32::consts::TAU;
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -22,6 +23,9 @@ const PERFECT_WINDOW: f32 = 10.0;
 const GOOD_WINDOW: f32 = 26.0;
 
 const MAX_COMBO_MULTIPLIER: u32 = 4;
+
+/// Milestone combo count that triggers a ComboEvent (every N hits)
+const COMBO_MILESTONE: u32 = 5;
 
 // Game URL used in the share tweet (referenced only in WASM builds)
 #[cfg(target_arch = "wasm32")]
@@ -48,6 +52,9 @@ const SHARE_HOVER: Color = Color::srgb(0.10, 0.22, 0.45);
 #[cfg(target_arch = "wasm32")]
 const SHARE_PRESS: Color = Color::srgb(0.02, 0.05, 0.12);
 
+// Audio
+const SAMPLE_RATE: u32 = 44100;
+
 // ── States ───────────────────────────────────────────────────────────────────
 
 #[derive(States, Debug, Clone, PartialEq, Eq, Hash, Default)]
@@ -56,6 +63,26 @@ enum AppState {
     Title,
     Playing,
     GameOver,
+}
+
+// ── Events ───────────────────────────────────────────────────────────────────
+
+/// Fired on a successful hit (PERFECT or GOOD).
+#[derive(Event)]
+struct HitEvent {
+    perfect: bool,
+    /// Current combo count after this hit (used for pitch scaling)
+    combo: u32,
+}
+
+/// Fired on a MISS (input too late, or pulse escaped without input).
+#[derive(Event)]
+struct MissEvent;
+
+/// Fired when combo reaches a multiple of COMBO_MILESTONE.
+#[derive(Event)]
+struct ComboEvent {
+    combo: u32,
 }
 
 // ── Resources ────────────────────────────────────────────────────────────────
@@ -82,6 +109,27 @@ impl GameData {
             high_score: hs,
             ..default()
         };
+    }
+}
+
+/// Handles to the procedurally generated AudioSource assets.
+#[derive(Resource)]
+struct AudioHandles {
+    hit_perfect: Handle<AudioSource>,
+    hit_good: Handle<AudioSource>,
+    miss: Handle<AudioSource>,
+    combo: Handle<AudioSource>,
+}
+
+/// Global audio volume config (0.0 – 1.0).
+#[derive(Resource)]
+struct AudioConfig {
+    volume: f32,
+}
+
+impl Default for AudioConfig {
+    fn default() -> Self {
+        Self { volume: 0.6 }
     }
 }
 
@@ -151,9 +199,14 @@ fn main() {
     )
     .insert_resource(ClearColor(BG_COLOR))
     .init_resource::<GameData>()
+    .init_resource::<AudioConfig>()
     .init_state::<AppState>()
-    // One persistent camera for all states
-    .add_systems(Startup, setup_camera)
+    // Events
+    .add_event::<HitEvent>()
+    .add_event::<MissEvent>()
+    .add_event::<ComboEvent>()
+    // One persistent camera + audio for all states
+    .add_systems(Startup, (setup_camera, setup_audio))
     // Title
     .add_systems(OnEnter(AppState::Title), setup_title)
     .add_systems(OnExit(AppState::Title), despawn_with::<TitleScreen>)
@@ -171,6 +224,10 @@ fn main() {
             miss_check,
             update_hud,
             update_judgment_texts,
+            // Audio: reads events sent by handle_input / miss_check above
+            play_hit_sound,
+            play_miss_sound,
+            play_combo_sound,
         )
             .chain()
             .run_if(in_state(AppState::Playing)),
@@ -190,8 +247,7 @@ fn main() {
         share_button_system.run_if(in_state(AppState::GameOver)),
     );
 
-    app
-        .run();
+    app.run();
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -257,6 +313,162 @@ fn spawn_button<M: Component>(
                 TextColor(Color::WHITE),
             ));
         });
+}
+
+// ── Procedural audio ──────────────────────────────────────────────────────────
+
+/// Build a mono 16-bit PCM WAV from a sample generator `f(t, duration) -> [-1, 1]`.
+fn build_wav(duration_secs: f32, generator: impl Fn(f32, f32) -> f32) -> AudioSource {
+    let num_samples = (SAMPLE_RATE as f32 * duration_secs) as u32;
+    let data_size = num_samples * 2; // 16-bit = 2 bytes per sample
+
+    let mut bytes: Vec<u8> = Vec::with_capacity(44 + data_size as usize);
+
+    // ── RIFF / WAVE header ──
+    bytes.extend_from_slice(b"RIFF");
+    bytes.extend_from_slice(&(36 + data_size).to_le_bytes());
+    bytes.extend_from_slice(b"WAVE");
+    // fmt chunk
+    bytes.extend_from_slice(b"fmt ");
+    bytes.extend_from_slice(&16u32.to_le_bytes()); // chunk size
+    bytes.extend_from_slice(&1u16.to_le_bytes()); // PCM
+    bytes.extend_from_slice(&1u16.to_le_bytes()); // mono
+    bytes.extend_from_slice(&SAMPLE_RATE.to_le_bytes());
+    bytes.extend_from_slice(&(SAMPLE_RATE * 2).to_le_bytes()); // byte rate
+    bytes.extend_from_slice(&2u16.to_le_bytes()); // block align
+    bytes.extend_from_slice(&16u16.to_le_bytes()); // bits per sample
+    // data chunk
+    bytes.extend_from_slice(b"data");
+    bytes.extend_from_slice(&data_size.to_le_bytes());
+
+    for i in 0..num_samples {
+        let t = i as f32 / SAMPLE_RATE as f32;
+        let value = generator(t, duration_secs).clamp(-1.0, 1.0);
+        let sample = (value * i16::MAX as f32) as i16;
+        bytes.extend_from_slice(&sample.to_le_bytes());
+    }
+
+    AudioSource { bytes: bytes.into() }
+}
+
+/// PERFECT hit: bright two-tone ding (880 Hz + 1320 Hz), 100 ms.
+fn sound_hit_perfect() -> AudioSource {
+    build_wav(0.10, |t, dur| {
+        let env = if t < 0.003 {
+            t / 0.003
+        } else {
+            ((dur - t) / (dur - 0.003)).powf(1.5).max(0.0)
+        };
+        let wave = 0.55 * (TAU * 880.0 * t).sin() + 0.45 * (TAU * 1320.0 * t).sin();
+        wave * env * 0.9
+    })
+}
+
+/// GOOD hit: clean single tone (660 Hz), 90 ms.
+fn sound_hit_good() -> AudioSource {
+    build_wav(0.09, |t, dur| {
+        let env = ((dur - t) / dur).powf(1.2);
+        (TAU * 660.0 * t).sin() * env * 0.75
+    })
+}
+
+/// MISS: low dull thud (180 Hz) with fast exponential decay, 140 ms.
+fn sound_miss() -> AudioSource {
+    build_wav(0.14, |t, _| {
+        let env = (-t / 0.04).exp();
+        (TAU * 180.0 * t).sin() * env * 0.65
+    })
+}
+
+/// Combo milestone: C-major chord (C5-E5-G5), 180 ms.
+fn sound_combo() -> AudioSource {
+    build_wav(0.18, |t, dur| {
+        let attack = (t / 0.008).min(1.0);
+        let decay = ((dur - t) / dur).powf(0.8).max(0.0);
+        let env = attack * decay;
+        let wave = (TAU * 523.25 * t).sin()
+            + (TAU * 659.25 * t).sin()
+            + (TAU * 784.0 * t).sin();
+        wave / 3.0 * env * 0.9
+    })
+}
+
+// ── Audio setup ───────────────────────────────────────────────────────────────
+
+fn setup_audio(mut commands: Commands, mut audio_assets: ResMut<Assets<AudioSource>>) {
+    commands.insert_resource(AudioHandles {
+        hit_perfect: audio_assets.add(sound_hit_perfect()),
+        hit_good: audio_assets.add(sound_hit_good()),
+        miss: audio_assets.add(sound_miss()),
+        combo: audio_assets.add(sound_combo()),
+    });
+}
+
+// ── Audio playback systems ────────────────────────────────────────────────────
+
+fn play_hit_sound(
+    mut commands: Commands,
+    mut events: EventReader<HitEvent>,
+    handles: Res<AudioHandles>,
+    config: Res<AudioConfig>,
+) {
+    for ev in events.read() {
+        let handle = if ev.perfect {
+            handles.hit_perfect.clone()
+        } else {
+            handles.hit_good.clone()
+        };
+        // Raise pitch slightly as combo builds – rewards sustained accuracy
+        let pitch = 1.0 + (ev.combo as f32 * 0.015).min(0.30);
+        commands.spawn((
+            AudioPlayer(handle),
+            PlaybackSettings {
+                mode: PlaybackMode::Despawn,
+                volume: Volume::new(config.volume),
+                speed: pitch,
+                ..default()
+            },
+        ));
+    }
+}
+
+fn play_miss_sound(
+    mut commands: Commands,
+    mut events: EventReader<MissEvent>,
+    handles: Res<AudioHandles>,
+    config: Res<AudioConfig>,
+) {
+    for _ in events.read() {
+        commands.spawn((
+            AudioPlayer(handles.miss.clone()),
+            PlaybackSettings {
+                mode: PlaybackMode::Despawn,
+                volume: Volume::new(config.volume * 0.8),
+                ..default()
+            },
+        ));
+    }
+}
+
+fn play_combo_sound(
+    mut commands: Commands,
+    mut events: EventReader<ComboEvent>,
+    handles: Res<AudioHandles>,
+    config: Res<AudioConfig>,
+) {
+    for ev in events.read() {
+        // Slightly higher pitch on larger combos
+        let pitch = 1.0 + (ev.combo as f32 * 0.01).min(0.25);
+        commands.spawn((
+            AudioPlayer(handles.combo.clone()),
+            PlaybackSettings {
+                mode: PlaybackMode::Despawn,
+                volume: Volume::new(config.volume),
+                speed: pitch,
+                ..default()
+            },
+        ));
+    }
 }
 
 // ── Title ────────────────────────────────────────────────────────────────────
@@ -350,7 +562,6 @@ fn setup_game(
             HudRoot,
         ))
         .with_children(|p| {
-            // Timer
             p.spawn((
                 Text::new("30.0"),
                 TextFont {
@@ -360,7 +571,6 @@ fn setup_game(
                 TextColor(Color::WHITE),
                 TimerText,
             ));
-            // Score
             p.spawn((
                 Text::new("0"),
                 TextFont {
@@ -370,7 +580,6 @@ fn setup_game(
                 TextColor(Color::WHITE),
                 ScoreText,
             ));
-            // Combo
             p.spawn((
                 Text::new(""),
                 TextFont {
@@ -448,7 +657,6 @@ fn move_pulses(
     for (entity, mut pulse, mesh2d) in &mut pulses {
         pulse.radius -= PULSE_SPEED * dt;
 
-        // Rebuild the ring geometry to match the new radius
         if let Some(mesh) = meshes.get_mut(mesh2d.0.id()) {
             *mesh = annulus_mesh(pulse.radius.max(0.0), 3.5);
         }
@@ -466,6 +674,9 @@ fn handle_input(
     mut pulses: Query<(Entity, &mut Pulse)>,
     mut data: ResMut<GameData>,
     mut commands: Commands,
+    mut ev_hit: EventWriter<HitEvent>,
+    mut ev_miss: EventWriter<MissEvent>,
+    mut ev_combo: EventWriter<ComboEvent>,
 ) {
     let pressed = mouse.just_pressed(MouseButton::Left)
         || touch.any_just_pressed()
@@ -517,8 +728,18 @@ fn handle_input(
             data.best_combo = data.combo;
         }
         data.score += score_delta * data.combo_multiplier();
+
+        ev_hit.send(HitEvent {
+            perfect: judgment == "PERFECT",
+            combo: data.combo,
+        });
+
+        if data.combo % COMBO_MILESTONE == 0 {
+            ev_combo.send(ComboEvent { combo: data.combo });
+        }
     } else {
         data.combo = 0;
+        ev_miss.send(MissEvent);
     }
 
     spawn_judgment_text(&mut commands, judgment, color);
@@ -529,11 +750,13 @@ fn miss_check(
     mut pulses: Query<&mut Pulse>,
     mut data: ResMut<GameData>,
     mut commands: Commands,
+    mut ev_miss: EventWriter<MissEvent>,
 ) {
     for mut pulse in &mut pulses {
         if !pulse.missed && pulse.radius < TARGET_RADIUS - GOOD_WINDOW {
             pulse.missed = true;
             data.combo = 0;
+            ev_miss.send(MissEvent);
             spawn_judgment_text(&mut commands, "MISS", MISS_COLOR);
         }
     }
@@ -628,7 +851,7 @@ fn setup_game_over(mut commands: Commands, data: Res<GameData>) {
                 TextColor(Color::srgb(1.0, 0.9, 0.3)),
             ));
 
-            // ── Button row ───────────────────────────────────────────────────
+            // Button row
             p.spawn(Node {
                 flex_direction: FlexDirection::Row,
                 column_gap: Val::Px(12.0),
@@ -636,7 +859,6 @@ fn setup_game_over(mut commands: Commands, data: Res<GameData>) {
                 ..default()
             })
             .with_children(|row| {
-                // Retry button (always shown)
                 spawn_button(
                     row,
                     "Retry",
@@ -645,7 +867,6 @@ fn setup_game_over(mut commands: Commands, data: Res<GameData>) {
                     RetryButton,
                 );
 
-                // Share button (WASM only)
                 #[cfg(target_arch = "wasm32")]
                 spawn_button(
                     row,
