@@ -27,9 +27,18 @@ python3 -m http.server 8080 --directory web
 
 ### 必要なもの
 
-- Rust (stable, 1.80+)
+- Rust (stable, 1.85+)
 - `wasm32-unknown-unknown` target（スクリプトが自動インストール）
 - `wasm-bindgen-cli`（スクリプトが自動インストール）
+
+> **ネイティブ Linux ビルドについて**
+> `bevy_audio` は Linux では ALSA を使用するため、ネイティブビルド時は
+> `libasound2-dev` が必要です。
+> ```bash
+> sudo apt-get install libasound2-dev
+> ```
+> ブラウザ向け WASM ビルド（`./build_web.sh`）および GitHub Actions CI は
+> WASM ターゲットのみでビルドするため ALSA は不要です。
 
 ## 技術スタック
 
