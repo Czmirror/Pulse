@@ -40,9 +40,12 @@ const RETRY_NORMAL: Color = Color::srgb(0.12, 0.12, 0.20);
 const RETRY_HOVER: Color = Color::srgb(0.22, 0.22, 0.38);
 const RETRY_PRESS: Color = Color::srgb(0.06, 0.06, 0.12);
 
-// Share button colors
+// Share button colors (WASM only)
+#[cfg(target_arch = "wasm32")]
 const SHARE_NORMAL: Color = Color::srgb(0.05, 0.10, 0.22);
+#[cfg(target_arch = "wasm32")]
 const SHARE_HOVER: Color = Color::srgb(0.10, 0.22, 0.45);
+#[cfg(target_arch = "wasm32")]
 const SHARE_PRESS: Color = Color::srgb(0.02, 0.05, 0.12);
 
 // ── States ───────────────────────────────────────────────────────────────────
@@ -124,60 +127,70 @@ struct TargetRing;
 struct RetryButton;
 
 /// Share-to-X button on the game-over screen (spawned only on WASM)
+#[cfg(target_arch = "wasm32")]
 #[derive(Component)]
 struct ShareButton;
 
 // ── App ──────────────────────────────────────────────────────────────────────
 
 fn main() {
-    App::new()
-        .add_plugins(
-            DefaultPlugins.set(WindowPlugin {
-                primary_window: Some(Window {
-                    title: "Pulse".into(),
-                    resolution: WindowResolution::new(480.0, 480.0),
-                    canvas: Some("#bevy-canvas".into()),
-                    fit_canvas_to_parent: true,
-                    prevent_default_event_handling: true,
-                    ..default()
-                }),
+    let mut app = App::new();
+
+    app.add_plugins(
+        DefaultPlugins.set(WindowPlugin {
+            primary_window: Some(Window {
+                title: "Pulse".into(),
+                resolution: WindowResolution::new(480.0, 480.0),
+                canvas: Some("#bevy-canvas".into()),
+                fit_canvas_to_parent: true,
+                prevent_default_event_handling: true,
                 ..default()
             }),
+            ..default()
+        }),
+    )
+    .insert_resource(ClearColor(BG_COLOR))
+    .init_resource::<GameData>()
+    .init_state::<AppState>()
+    // One persistent camera for all states
+    .add_systems(Startup, setup_camera)
+    // Title
+    .add_systems(OnEnter(AppState::Title), setup_title)
+    .add_systems(OnExit(AppState::Title), despawn_with::<TitleScreen>)
+    .add_systems(Update, title_input.run_if(in_state(AppState::Title)))
+    // Playing
+    .add_systems(OnEnter(AppState::Playing), setup_game)
+    .add_systems(OnExit(AppState::Playing), cleanup_game)
+    .add_systems(
+        Update,
+        (
+            tick_timer,
+            spawn_pulses,
+            move_pulses,
+            handle_input,
+            miss_check,
+            update_hud,
+            update_judgment_texts,
         )
-        .insert_resource(ClearColor(BG_COLOR))
-        .init_resource::<GameData>()
-        .init_state::<AppState>()
-        // One persistent camera for all states
-        .add_systems(Startup, setup_camera)
-        // Title
-        .add_systems(OnEnter(AppState::Title), setup_title)
-        .add_systems(OnExit(AppState::Title), despawn_with::<TitleScreen>)
-        .add_systems(Update, title_input.run_if(in_state(AppState::Title)))
-        // Playing
-        .add_systems(OnEnter(AppState::Playing), setup_game)
-        .add_systems(OnExit(AppState::Playing), cleanup_game)
-        .add_systems(
-            Update,
-            (
-                tick_timer,
-                spawn_pulses,
-                move_pulses,
-                handle_input,
-                miss_check,
-                update_hud,
-                update_judgment_texts,
-            )
-                .chain()
-                .run_if(in_state(AppState::Playing)),
-        )
-        // GameOver
-        .add_systems(OnEnter(AppState::GameOver), setup_game_over)
-        .add_systems(OnExit(AppState::GameOver), despawn_with::<GameOverScreen>)
-        .add_systems(
-            Update,
-            (game_over_input, retry_button_system, share_button_system)
-                .run_if(in_state(AppState::GameOver)),
-        )
+            .chain()
+            .run_if(in_state(AppState::Playing)),
+    )
+    // GameOver
+    .add_systems(OnEnter(AppState::GameOver), setup_game_over)
+    .add_systems(OnExit(AppState::GameOver), despawn_with::<GameOverScreen>)
+    .add_systems(
+        Update,
+        (game_over_input, retry_button_system).run_if(in_state(AppState::GameOver)),
+    );
+
+    // ShareButton is never spawned on native, so register this system only on WASM
+    #[cfg(target_arch = "wasm32")]
+    app.add_systems(
+        Update,
+        share_button_system.run_if(in_state(AppState::GameOver)),
+    );
+
+    app
         .run();
 }
 
@@ -644,7 +657,7 @@ fn setup_game_over(mut commands: Commands, data: Res<GameData>) {
             });
 
             p.spawn((
-                Text::new("Space / Touch to Retry"),
+                Text::new("Tap Retry  •  Space / Enter"),
                 TextFont {
                     font_size: 16.0,
                     ..default()
@@ -654,17 +667,17 @@ fn setup_game_over(mut commands: Commands, data: Res<GameData>) {
         });
 }
 
-/// Restart the game via keyboard / touch / RetryButton click.
-/// Raw mouse click is intentionally excluded to avoid conflicting with UI buttons.
+/// Restart the game via keyboard or RetryButton click / tap.
+/// Global touch / mouse are intentionally excluded: on touch devices
+/// touch.any_just_pressed() would also fire when tapping the Share button,
+/// causing an immediate restart before the tweet opens.
 fn game_over_input(
-    touch: Res<Touches>,
     keys: Res<ButtonInput<KeyCode>>,
     retry_q: Query<&Interaction, (Changed<Interaction>, With<RetryButton>)>,
     mut next: ResMut<NextState<AppState>>,
     mut data: ResMut<GameData>,
 ) {
-    let retry = touch.any_just_pressed()
-        || keys.just_pressed(KeyCode::Space)
+    let retry = keys.just_pressed(KeyCode::Space)
         || keys.just_pressed(KeyCode::Enter)
         || retry_q.iter().any(|i| *i == Interaction::Pressed);
 
@@ -688,6 +701,7 @@ fn retry_button_system(
 }
 
 /// Animate the Share button and open the tweet URL on press (WASM only).
+#[cfg(target_arch = "wasm32")]
 fn share_button_system(
     mut q: Query<(&Interaction, &mut BackgroundColor), (Changed<Interaction>, With<ShareButton>)>,
     data: Res<GameData>,
@@ -718,12 +732,11 @@ fn open_tweet(score: u32) {
         percent_encode(&text)
     );
     if let Some(window) = web_sys::window() {
-        let _ = window.open_with_url_and_target(&url, "_blank");
+        // "noopener,noreferrer" prevents the opened page from accessing
+        // window.opener (reverse-tabnabbing mitigation)
+        let _ = window.open_with_url_and_target_and_features(&url, "_blank", "noopener,noreferrer");
     }
 }
-
-#[cfg(not(target_arch = "wasm32"))]
-fn open_tweet(_score: u32) {}
 
 /// Percent-encode a string for use in a URL query parameter.
 /// Encodes everything except unreserved characters (RFC 3986).
