@@ -3057,7 +3057,6 @@ version = "0.1.0"
 dependencies = [
  "bevy",
  "getrandom 0.3.4",
- "js-sys",
  "wasm-bindgen",
  "web-sys",
 ]

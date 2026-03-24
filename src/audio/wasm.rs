@@ -17,10 +17,10 @@ use web_sys::{AudioBuffer, AudioBufferSourceNode, AudioContext, GainNode};
 
 use super::{AudioConfig, PlaySoundEffect, SetSfxVolume, SoundEffect};
 
-const SAMPLE_RATE: f32 = 44100.0;
-
 // ── 内部構造体 ────────────────────────────────────────────────────────────────
 
+/// `WasmAudioInner` は web_sys のオーディオハンドルを保持する。
+/// web_sys 型は !Send なので NonSend リソースとして管理する。
 struct WasmAudioInner {
     ctx:         AudioContext,
     master_gain: GainNode,
@@ -30,27 +30,23 @@ struct WasmAudioInner {
     combo:       AudioBuffer,
 }
 
-// SAFETY: WASM は常にシングルスレッド。JsValue は !Send だが実際に
-// 並行アクセスは発生しない。
-unsafe impl Send for WasmAudioInner {}
-unsafe impl Sync for WasmAudioInner {}
+// ── NonSend リソース ──────────────────────────────────────────────────────────
 
-// ── Resource ──────────────────────────────────────────────────────────────────
-
-#[derive(Resource)]
+/// NonSend リソース。derive(Resource) は付けず、
+/// world.insert_non_send_resource で登録する。
 pub struct WasmAudio(Option<WasmAudioInner>);
 
 // ── PCM サンプル生成（float32 mono）────────────────────────────────────────
 
-fn gen_samples(dur: f32, f: impl Fn(f32, f32) -> f32) -> Vec<f32> {
-    let n = (SAMPLE_RATE * dur) as usize;
+fn gen_samples(dur: f32, sample_rate: f32, f: impl Fn(f32, f32) -> f32) -> Vec<f32> {
+    let n = (sample_rate * dur) as usize;
     (0..n)
-        .map(|i| f(i as f32 / SAMPLE_RATE, dur).clamp(-1.0, 1.0))
+        .map(|i| f(i as f32 / sample_rate, dur).clamp(-1.0, 1.0))
         .collect()
 }
 
-fn samples_hit_perfect() -> Vec<f32> {
-    gen_samples(0.10, |t, dur| {
+fn samples_hit_perfect(sr: f32) -> Vec<f32> {
+    gen_samples(0.10, sr, |t, dur| {
         let env = if t < 0.003 {
             t / 0.003
         } else {
@@ -60,20 +56,20 @@ fn samples_hit_perfect() -> Vec<f32> {
     })
 }
 
-fn samples_hit_good() -> Vec<f32> {
-    gen_samples(0.09, |t, dur| {
+fn samples_hit_good(sr: f32) -> Vec<f32> {
+    gen_samples(0.09, sr, |t, dur| {
         ((dur - t) / dur).powf(1.2) * (TAU * 660.0 * t).sin() * 0.75
     })
 }
 
-fn samples_miss() -> Vec<f32> {
-    gen_samples(0.14, |t, _| {
+fn samples_miss(sr: f32) -> Vec<f32> {
+    gen_samples(0.14, sr, |t, _| {
         (-t / 0.04).exp() * (TAU * 180.0 * t).sin() * 0.65
     })
 }
 
-fn samples_combo() -> Vec<f32> {
-    gen_samples(0.18, |t, dur| {
+fn samples_combo(sr: f32) -> Vec<f32> {
+    gen_samples(0.18, sr, |t, dur| {
         let env = (t / 0.008).min(1.0) * ((dur - t) / dur).powf(0.8).max(0.0);
         ((TAU * 523.25 * t).sin() + (TAU * 659.25 * t).sin() + (TAU * 784.0 * t).sin())
             / 3.0
@@ -84,30 +80,26 @@ fn samples_combo() -> Vec<f32> {
 
 // ── AudioBuffer ヘルパー ───────────────────────────────────────────────────────
 
-/// Vec<f32> から AudioBuffer を生成する（同期・コピー不要）。
 fn make_buffer(
     ctx: &AudioContext,
     samples: &[f32],
+    sample_rate: f32,
     label: &str,
 ) -> Result<AudioBuffer, JsValue> {
     let n = samples.len() as u32;
-    let buf = ctx.create_buffer(1, n, SAMPLE_RATE)?;
+    let buf = ctx.create_buffer(1, n, sample_rate)?;
 
-    // web-sys の copy_to_channel は &[f32] を直接受け取る
-    buf.copy_to_channel(samples, 0)
-        .map_err(|e| {
-            error!(
-                "[WASM Audio] Setup: copy_to_channel '{}' failed: {:?}",
-                label, e
-            );
-            e
-        })?;
+    buf.copy_to_channel(samples, 0).map_err(|e| {
+        error!("[WASM Audio] Setup: copy_to_channel '{}' failed: {:?}", label, e);
+        e
+    })?;
 
     info!(
-        "[WASM Audio] Setup: buffer '{}' created ({} samples, {:.0} ms)",
+        "[WASM Audio] Setup: buffer '{}' created ({} samples, {:.0} ms @ {:.0} Hz)",
         label,
         n,
-        n as f32 / SAMPLE_RATE * 1000.0
+        n as f32 / sample_rate * 1000.0,
+        sample_rate,
     );
     Ok(buf)
 }
@@ -119,7 +111,14 @@ fn create_inner(volume: f32) -> Result<WasmAudioInner, JsValue> {
         error!("[WASM Audio] Setup: AudioContext::new() failed: {:?}", e);
         e
     })?;
-    info!("[WASM Audio] Setup: AudioContext created (state={})", ctx_state_str(&ctx));
+
+    // ブラウザの実際のサンプルレートを使用してリサンプリングを回避する
+    let sample_rate = ctx.sample_rate();
+    info!(
+        "[WASM Audio] Setup: AudioContext created (state={}, sample_rate={} Hz)",
+        ctx_state_str(&ctx),
+        sample_rate,
+    );
 
     let master_gain: GainNode = ctx.create_gain().map_err(|e| {
         error!("[WASM Audio] Setup: create_gain() failed: {:?}", e);
@@ -134,53 +133,35 @@ fn create_inner(volume: f32) -> Result<WasmAudioInner, JsValue> {
             error!("[WASM Audio] Setup: GainNode→destination connect failed: {:?}", e);
             e
         })?;
-    info!(
-        "[WASM Audio] Setup: master GainNode connected, volume={:.2}",
-        volume
-    );
+    info!("[WASM Audio] Setup: master GainNode connected, volume={:.2}", volume);
 
-    let hp_samples = samples_hit_perfect();
-    let hg_samples = samples_hit_good();
-    let ms_samples = samples_miss();
-    let co_samples = samples_combo();
-
-    let hit_perfect = make_buffer(&ctx, &hp_samples, "hit_perfect")?;
-    let hit_good    = make_buffer(&ctx, &hg_samples, "hit_good")?;
-    let miss        = make_buffer(&ctx, &ms_samples, "miss")?;
-    let combo       = make_buffer(&ctx, &co_samples, "combo")?;
+    let hit_perfect = make_buffer(&ctx, &samples_hit_perfect(sample_rate), sample_rate, "hit_perfect")?;
+    let hit_good    = make_buffer(&ctx, &samples_hit_good(sample_rate),    sample_rate, "hit_good")?;
+    let miss        = make_buffer(&ctx, &samples_miss(sample_rate),        sample_rate, "miss")?;
+    let combo       = make_buffer(&ctx, &samples_combo(sample_rate),       sample_rate, "combo")?;
 
     info!("[WASM Audio] Setup: all 4 buffers ready ✓");
-    Ok(WasmAudioInner {
-        ctx,
-        master_gain,
-        hit_perfect,
-        hit_good,
-        miss,
-        combo,
-    })
+    Ok(WasmAudioInner { ctx, master_gain, hit_perfect, hit_good, miss, combo })
 }
 
-fn setup_audio_wasm(mut commands: Commands, config: Res<AudioConfig>) {
-    match create_inner(config.volume) {
+/// 排他的 World アクセスで NonSend リソースを登録する。
+fn setup_audio_wasm(world: &mut World) {
+    let volume = world.resource::<AudioConfig>().volume;
+    match create_inner(volume) {
         Ok(inner) => {
-            commands.insert_resource(WasmAudio(Some(inner)));
+            world.insert_non_send_resource(WasmAudio(Some(inner)));
         }
         Err(e) => {
-            warn!(
-                "[WASM Audio] Setup FAILED ({:?}). Game will run silently.",
-                e
-            );
-            commands.insert_resource(WasmAudio(None));
+            warn!("[WASM Audio] Setup FAILED ({:?}). Game will run silently.", e);
+            world.insert_non_send_resource(WasmAudio(None));
         }
     }
 }
 
 // ── AudioContext アンロック（初回入力時）─────────────────────────────────────
 
-/// ブラウザの Autoplay Policy でコンテキストが suspended になる場合があるため、
-/// 任意の入力を検知したら resume() を呼ぶ。
 fn unlock_audio_wasm(
-    audio: Option<Res<WasmAudio>>,
+    audio: Option<NonSend<WasmAudio>>,
     mouse: Res<ButtonInput<MouseButton>>,
     touch: Res<Touches>,
     keys:  Res<ButtonInput<KeyCode>>,
@@ -192,21 +173,12 @@ fn unlock_audio_wasm(
         || touch.any_just_pressed()
         || keys.get_just_pressed().next().is_some();
 
-    if !any_input {
-        return;
-    }
+    if !any_input { return; }
 
     let state_before = ctx_state_str(&inner.ctx);
     match inner.ctx.resume() {
-        Ok(_promise) => {
-            info!(
-                "[WASM Audio] Unlock: resume() called (was {})",
-                state_before
-            );
-        }
-        Err(e) => {
-            warn!("[WASM Audio] Unlock: resume() error: {:?}", e);
-        }
+        Ok(_) => info!("[WASM Audio] Unlock: resume() called (was {})", state_before),
+        Err(e) => warn!("[WASM Audio] Unlock: resume() error: {:?}", e),
     }
 }
 
@@ -219,16 +191,9 @@ fn play_buffer(
     pitch: f32,
     label: &str,
 ) -> Result<(), JsValue> {
-    // コンテキストが suspended の場合は resume を試みてから再生
-    let state = ctx_state_str(ctx);
-    if state == "Suspended" {
-        info!(
-            "[WASM Audio] Play: context Suspended before '{}', calling resume()",
-            label
-        );
+    if ctx_state_str(ctx) == "Suspended" {
+        info!("[WASM Audio] Play: context Suspended before '{}', calling resume()", label);
         let _ = ctx.resume();
-        // resume は非同期。今フレームは再生をスキップせず続行する
-        // （Chrome など多くのブラウザでは resume 後すぐ鳴る）
     }
 
     let src: AudioBufferSourceNode = ctx.create_buffer_source().map_err(|e| {
@@ -238,26 +203,20 @@ fn play_buffer(
 
     src.set_buffer(Some(buf));
     src.playback_rate().set_value(pitch);
-
     src.connect_with_audio_node(gain.as_ref()).map_err(|e| {
-        error!(
-            "[WASM Audio] Play: src→gain connect failed for '{}': {:?}",
-            label, e
-        );
+        error!("[WASM Audio] Play: src→gain connect failed for '{}': {:?}", label, e);
         e
     })?;
-
     src.start().map_err(|e| {
         error!("[WASM Audio] Play: start() failed for '{}': {:?}", label, e);
         e
     })?;
 
-    // src は JS GC が管理するので Rust 側で drop しても再生は続く
     Ok(())
 }
 
 fn play_sound_wasm(
-    audio: Option<Res<WasmAudio>>,
+    audio: Option<NonSend<WasmAudio>>,
     mut events: EventReader<PlaySoundEffect>,
 ) {
     let Some(audio) = audio else { return };
@@ -291,7 +250,7 @@ fn play_sound_wasm(
 // ── 音量変更 ──────────────────────────────────────────────────────────────────
 
 fn set_volume_wasm(
-    audio: Option<Res<WasmAudio>>,
+    audio: Option<NonSend<WasmAudio>>,
     mut config: ResMut<AudioConfig>,
     mut events: EventReader<SetSfxVolume>,
 ) {
@@ -312,7 +271,6 @@ fn set_volume_wasm(
 
 // ── localStorage ─────────────────────────────────────────────────────────────
 
-/// SE 音量を localStorage に保存する。
 fn save_volume_to_storage(volume: f32) {
     let Some(window) = web_sys::window() else { return };
     let Ok(Some(storage)) = window.local_storage() else { return };
@@ -321,7 +279,6 @@ fn save_volume_to_storage(volume: f32) {
     }
 }
 
-/// localStorage から SE 音量を復元する。
 pub fn load_volume_from_storage() -> Option<f32> {
     let window = web_sys::window()?;
     let storage = window.local_storage().ok()??;
@@ -335,7 +292,7 @@ pub fn load_volume_from_storage() -> Option<f32> {
 
 fn ctx_state_str(ctx: &AudioContext) -> &'static str {
     let s = ctx.state();
-    if s == web_sys::AudioContextState::Running   { "Running"   }
+    if s == web_sys::AudioContextState::Running        { "Running"   }
     else if s == web_sys::AudioContextState::Suspended { "Suspended" }
     else                                               { "Closed"    }
 }
@@ -346,6 +303,8 @@ pub fn build(app: &mut App) {
     app.add_systems(Startup, setup_audio_wasm)
         .add_systems(
             Update,
-            (unlock_audio_wasm, play_sound_wasm, set_volume_wasm),
+            // set_volume_wasm を play_sound_wasm より先に実行して
+            // 同フレームのボリューム変更が即座に反映されるようにする
+            (unlock_audio_wasm, set_volume_wasm, play_sound_wasm).chain(),
         );
 }

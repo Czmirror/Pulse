@@ -341,9 +341,16 @@ fn title_input(
     mouse: Res<ButtonInput<MouseButton>>,
     touch: Res<Touches>,
     keys:  Res<ButtonInput<KeyCode>>,
+    // 音量ボタンが押されているときはゲーム開始しない
+    vol_buttons: Query<&Interaction, Or<(With<VolumeDownButton>, With<VolumeUpButton>)>>,
     mut next: ResMut<NextState<AppState>>,
     mut data: ResMut<GameData>,
 ) {
+    // UI ボタンがこのフレームで Pressed なら、そのクリック/タップを消費済みとして扱う
+    if vol_buttons.iter().any(|i| *i == Interaction::Pressed) {
+        return;
+    }
+
     if mouse.just_pressed(MouseButton::Left)
         || touch.any_just_pressed()
         || keys.just_pressed(KeyCode::Space)

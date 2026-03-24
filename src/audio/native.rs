@@ -165,5 +165,7 @@ fn set_volume(mut config: ResMut<AudioConfig>, mut events: EventReader<SetSfxVol
 
 pub fn build(app: &mut App) {
     app.add_systems(Startup, setup_audio)
-        .add_systems(Update, (play_sound, set_volume));
+        // set_volume を play_sound より先に実行して同フレームの
+        // 音量変更が即座に反映されるようにする
+        .add_systems(Update, (set_volume, play_sound).chain());
 }
