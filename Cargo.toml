@@ -3,6 +3,8 @@ name = "pulse"
 version = "0.1.0"
 edition = "2021"
 
+[workspace]
+
 [[bin]]
 name = "pulse"
 path = "src/main.rs"
@@ -22,6 +24,7 @@ bevy = { version = "0.15", default-features = false, features = [
     "default_font",
     "wav",
     "webgl2",
+    "webgpu",
     "x11",
 ] }
 

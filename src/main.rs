@@ -397,11 +397,11 @@ fn update_volume_display(
 fn volume_button_visual(
     mut down_q: Query<
         (&Interaction, &mut BackgroundColor),
-        (Changed<Interaction>, With<VolumeDownButton>),
+        (Changed<Interaction>, With<VolumeDownButton>, Without<VolumeUpButton>),
     >,
     mut up_q: Query<
         (&Interaction, &mut BackgroundColor),
-        (Changed<Interaction>, With<VolumeUpButton>),
+        (Changed<Interaction>, With<VolumeUpButton>, Without<VolumeDownButton>),
     >,
 ) {
     for (i, mut bg) in down_q.iter_mut().chain(up_q.iter_mut()) {
