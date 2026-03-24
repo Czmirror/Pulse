@@ -124,15 +124,9 @@ fn main() {
         ..default()
     };
 
-    // WASM では bevy_audio (rodio) を無効化し、Web Audio API 直実装に切り替える
-    #[cfg(target_arch = "wasm32")]
-    app.add_plugins(
-        DefaultPlugins
-            .build()
-            .disable::<bevy::audio::AudioPlugin>()
-            .set(window_plugin),
-    );
-    #[cfg(not(target_arch = "wasm32"))]
+    // WASM では native.rs の AudioPlayer が一切生成されないため
+    // bevy_audio は実質 no-op。disable() は型不一致でパニックする恐れが
+    // あるため使わず、両プラットフォームで同一の DefaultPlugins を使う。
     app.add_plugins(DefaultPlugins.set(window_plugin));
 
     app.add_plugins(AudioPlugin)
