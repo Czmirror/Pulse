@@ -24,12 +24,23 @@ bevy = { version = "0.15", default-features = false, features = [
     "webgl2",
     "x11",
 ] }
-wasm-bindgen = "0.2"
-web-sys = { version = "0.3", features = ["Window"] }
 
+# WASM 専用依存（web-sys / wasm-bindgen）
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2"
 getrandom = { version = "0.3", features = ["wasm_js"] }
+web-sys = { version = "0.3", features = [
+    "Window",
+    "Storage",
+    "AudioContext",
+    "AudioContextState",
+    "AudioBuffer",
+    "AudioBufferSourceNode",
+    "AudioDestinationNode",
+    "AudioNode",
+    "AudioParam",
+    "GainNode",
+] }
 
 [profile.release]
 opt-level = "z"
