@@ -18,6 +18,7 @@ const GOOD_WINDOW: f32 = 26.0;
 const MAX_COMBO_MULTIPLIER: u32 = 4;
 const COMBO_MILESTONE: u32 = 5;
 const COMBO_PULSE_DURATION: f32 = 0.24;
+const COMBO_BREAK_DURATION: f32 = 0.32;
 
 #[cfg(target_arch = "wasm32")]
 const GAME_URL: &str = "https://czmirror.github.io/Pulse/";
@@ -88,6 +89,8 @@ impl GameData {
 struct ComboDisplayFx {
     last_combo:  u32,
     pulse_timer: f32,
+    break_timer: f32,
+    broken_from: u32,
 }
 
 // ── Components ───────────────────────────────────────────────────────────────
@@ -107,6 +110,7 @@ struct JudgmentText { timer: f32 }
 #[derive(Component)] struct HudRoot;
 #[derive(Component)] struct TargetRing;
 #[derive(Component)] struct RetryButton;
+#[derive(Component)] struct MissFlashOverlay;
 
 // タイトル画面の SFX 音量スライダー
 #[derive(Component)] struct VolumeDisplay;
@@ -443,6 +447,8 @@ fn setup_game(
 ) {
     combo_fx.last_combo = 0;
     combo_fx.pulse_timer = 0.0;
+    combo_fx.break_timer = 0.0;
+    combo_fx.broken_from = 0;
 
     commands.spawn((
         Mesh2d(meshes.add(annulus_mesh(TARGET_RADIUS, TARGET_THICKNESS))),
@@ -465,6 +471,17 @@ fn setup_game(
             HudRoot,
         ))
         .with_children(|p| {
+            p.spawn((
+                Node {
+                    width: Val::Percent(100.0),
+                    height: Val::Percent(100.0),
+                    position_type: PositionType::Absolute,
+                    ..default()
+                },
+                BackgroundColor(Color::srgba(1.0, 0.2, 0.2, 0.0)),
+                ZIndex(1),
+                MissFlashOverlay,
+            ));
             p.spawn((
                 Text::new("30.0"),
                 TextFont { font_size: 24.0, ..default() },
@@ -676,31 +693,6 @@ fn miss_check(
     }
 }
 
-fn update_hud(
-    data: Res<GameData>,
-    mut score_q: Query<&mut Text, (With<ScoreText>, Without<ComboText>, Without<TimerText>)>,
-    mut combo_q: Query<&mut Text, (With<ComboText>, Without<ScoreText>, Without<TimerText>, Without<ComboSubText>)>,
-    mut combo_sub_q: Query<&mut Text, (With<ComboSubText>, Without<ComboText>, Without<ScoreText>, Without<TimerText>)>,
-    mut timer_q: Query<&mut Text, (With<TimerText>, Without<ScoreText>, Without<ComboText>)>,
-) {
-    for mut t in &mut score_q { **t = format!("{}", data.score); }
-    for mut t in &mut combo_q {
-        if data.combo >= 2 {
-            **t = format!("{} COMBO", data.combo);
-        } else {
-            **t = String::new();
-        }
-    }
-    for mut t in &mut combo_sub_q {
-        if data.combo >= 2 {
-            **t = format!("x{}", data.combo_multiplier());
-        } else {
-            **t = String::new();
-        }
-    }
-    for mut t in &mut timer_q { **t = format!("{:.1}", data.time_left.max(0.0)); }
-}
-
 fn animate_combo_display(
     time: Res<Time>,
     data: Res<GameData>,
@@ -713,58 +705,156 @@ fn animate_combo_display(
         (&mut TextFont, &mut TextColor, &mut Node),
         (With<ComboSubText>, Without<ComboText>),
     >,
+    mut miss_flash_q: Query<&mut BackgroundColor, With<MissFlashOverlay>>,
 ) {
     if combo_fx.last_combo != data.combo {
         if data.combo > combo_fx.last_combo {
             combo_fx.pulse_timer = COMBO_PULSE_DURATION;
         } else if data.combo < combo_fx.last_combo {
             combo_fx.pulse_timer = 0.0;
+            if combo_fx.last_combo >= 2 {
+                combo_fx.break_timer = COMBO_BREAK_DURATION;
+                combo_fx.broken_from = combo_fx.last_combo;
+            }
         }
         combo_fx.last_combo = data.combo;
     }
 
     combo_fx.pulse_timer = (combo_fx.pulse_timer - time.delta_secs()).max(0.0);
+    combo_fx.break_timer = (combo_fx.break_timer - time.delta_secs()).max(0.0);
     let pulse = if COMBO_PULSE_DURATION > 0.0 {
         combo_fx.pulse_timer / COMBO_PULSE_DURATION
     } else {
         0.0
     };
+    let break_pulse = if COMBO_BREAK_DURATION > 0.0 {
+        combo_fx.break_timer / COMBO_BREAK_DURATION
+    } else {
+        0.0
+    };
     let combo_visible = data.combo >= 2;
-    let alpha = if combo_visible { 0.72 + pulse * 0.28 } else { 0.0 };
-    let font_size = if combo_visible { 54.0 + pulse * 18.0 } else { 54.0 };
-    let sub_font_size = if combo_visible { 20.0 + pulse * 6.0 } else { 20.0 };
-    let left = Val::Percent(50.0 - (font_size * 0.14).clamp(5.0, 12.0));
-    let sub_left = Val::Percent(50.0 - (sub_font_size * 0.20).clamp(3.0, 8.0));
+    let combo_stage = if data.combo >= 20 {
+        2
+    } else if data.combo >= 10 {
+        1
+    } else {
+        0
+    };
+    let (base_font_size, base_color, sub_color) = match combo_stage {
+        2 => (
+            74.0,
+            Color::srgba(1.0, 0.93, 0.38, 0.96),
+            Color::srgba(1.0, 0.84, 0.30, 0.88),
+        ),
+        1 => (
+            64.0,
+            Color::srgba(0.88, 0.94, 1.0, 0.92),
+            Color::srgba(0.62, 0.84, 1.0, 0.82),
+        ),
+        _ => (
+            54.0,
+            Color::srgba(0.78, 0.90, 1.0, 0.82),
+            Color::srgba(0.74, 0.84, 1.0, 0.76),
+        ),
+    };
+    let pulse_boost = match combo_stage {
+        2 => 22.0,
+        1 => 18.0,
+        _ => 14.0,
+    };
+    let alpha = if combo_visible { base_color.to_srgba().alpha + pulse * 0.08 } else { 0.0 };
+    let font_size = if combo_visible { base_font_size + pulse * pulse_boost } else { base_font_size };
+    let sub_font_size = if combo_visible { 20.0 + combo_stage as f32 * 2.0 + pulse * 6.0 } else { 20.0 };
+    let left = Val::Percent(50.0 - (font_size * 0.14).clamp(5.0, 15.0));
+    let sub_left = Val::Percent(50.0 - (sub_font_size * 0.20).clamp(3.0, 9.0));
+    let break_visible = combo_fx.break_timer > 0.0;
 
     for (mut font, mut color, mut node) in &mut combo_q {
-        font.font_size = font_size;
-        color.0 = if combo_visible {
-            Color::srgba(0.78 + pulse * 0.22, 0.88 + pulse * 0.10, 1.0, alpha)
+        if break_visible {
+            font.font_size = 62.0 + break_pulse * 12.0;
+            color.0 = Color::srgba(1.0, 0.34 + break_pulse * 0.20, 0.34 + break_pulse * 0.10, 0.78 * break_pulse);
+            node.left = Val::Percent(50.0 - 11.0);
+        } else if combo_visible {
+            font.font_size = font_size;
+            let c = base_color.to_srgba();
+            color.0 = Color::srgba(c.red, c.green, c.blue, alpha);
+            node.left = left;
         } else {
-            Color::srgba(0.8, 0.9, 1.0, 0.0)
-        };
-        node.left = left;
+            font.font_size = base_font_size;
+            color.0 = Color::srgba(0.8, 0.9, 1.0, 0.0);
+            node.left = left;
+        }
     }
 
     for (mut font, mut color, mut node) in &mut combo_sub_q {
-        font.font_size = sub_font_size;
-        color.0 = if combo_visible {
-            Color::srgba(0.75, 0.86, 1.0, alpha * 0.95)
+        if break_visible {
+            font.font_size = 18.0;
+            color.0 = Color::srgba(1.0, 0.72, 0.72, 0.68 * break_pulse);
+            node.left = Val::Percent(50.0 - 9.0);
+        } else if combo_visible {
+            font.font_size = sub_font_size;
+            let c = sub_color.to_srgba();
+            color.0 = Color::srgba(c.red, c.green, c.blue, (c.alpha + pulse * 0.06).clamp(0.0, 1.0));
+            node.left = sub_left;
         } else {
-            Color::srgba(0.7, 0.82, 1.0, 0.0)
-        };
-        node.left = sub_left;
+            font.font_size = 20.0;
+            color.0 = Color::srgba(0.7, 0.82, 1.0, 0.0);
+            node.left = sub_left;
+        }
     }
+
+    for mut flash in &mut miss_flash_q {
+        flash.0 = if break_visible {
+            Color::srgba(1.0, 0.10, 0.12, 0.16 * break_pulse)
+        } else {
+            Color::srgba(1.0, 0.2, 0.2, 0.0)
+        };
+    }
+}
+
+fn update_hud(
+    data: Res<GameData>,
+    mut score_q: Query<&mut Text, (With<ScoreText>, Without<ComboText>, Without<TimerText>)>,
+    mut combo_q: Query<&mut Text, (With<ComboText>, Without<ScoreText>, Without<TimerText>, Without<ComboSubText>)>,
+    mut combo_sub_q: Query<&mut Text, (With<ComboSubText>, Without<ComboText>, Without<ScoreText>, Without<TimerText>)>,
+    mut timer_q: Query<&mut Text, (With<TimerText>, Without<ScoreText>, Without<ComboText>)>,
+    combo_fx: Res<ComboDisplayFx>,
+) {
+    for mut t in &mut score_q { **t = format!("{}", data.score); }
+    for mut t in &mut combo_q {
+        if data.combo >= 2 {
+            **t = format!("{} COMBO", data.combo);
+        } else if combo_fx.break_timer > 0.0 {
+            **t = "COMBO BREAK".to_string();
+        } else {
+            **t = String::new();
+        }
+    }
+    for mut t in &mut combo_sub_q {
+        if data.combo >= 2 {
+            **t = format!("x{}", data.combo_multiplier());
+        } else if combo_fx.break_timer > 0.0 {
+            **t = format!("lost at {}", combo_fx.broken_from);
+        } else {
+            **t = String::new();
+        }
+    }
+    for mut t in &mut timer_q { **t = format!("{:.1}", data.time_left.max(0.0)); }
 }
 
 fn update_judgment_texts(
     time: Res<Time>,
     mut commands: Commands,
-    mut q: Query<(Entity, &mut JudgmentText, &mut Transform, &mut TextColor)>,
+    mut q: Query<(Entity, &mut JudgmentText, &mut Transform, &mut TextColor, &mut TextFont, &Text2d)>,
 ) {
-    for (entity, mut jt, mut transform, mut color) in &mut q {
+    for (entity, mut jt, mut transform, mut color, mut font, text) in &mut q {
+        let is_perfect = text.0 == "PERFECT";
+        let rise_speed = if is_perfect { 82.0 } else { 60.0 };
+        let base_size = if is_perfect { 48.0 } else { 40.0 };
+
         jt.timer -= time.delta_secs();
-        transform.translation.y += 60.0 * time.delta_secs();
+        transform.translation.y += rise_speed * time.delta_secs();
+        font.font_size = base_size + (jt.timer / 0.8).clamp(0.0, 1.0) * if is_perfect { 8.0 } else { 4.0 };
         let alpha = (jt.timer / 0.8).clamp(0.0, 1.0);
         let c = color.0.to_srgba();
         color.0 = Color::srgba(c.red, c.green, c.blue, alpha);
