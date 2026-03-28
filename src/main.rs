@@ -1,7 +1,7 @@
 mod audio;
 
 use audio::{AudioConfig, AudioPlugin, PlaySoundEffect, SetSfxVolume, SoundEffect};
-use bevy::{prelude::*, window::WindowResolution};
+use bevy::{prelude::*, ui::RelativeCursorPosition, window::WindowResolution};
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -40,9 +40,11 @@ const SHARE_HOVER: Color  = Color::srgb(0.10, 0.22, 0.45);
 #[cfg(target_arch = "wasm32")]
 const SHARE_PRESS: Color  = Color::srgb(0.02, 0.05, 0.12);
 
-const VOL_BTN_NORMAL: Color = Color::srgb(0.12, 0.12, 0.22);
-const VOL_BTN_HOVER: Color  = Color::srgb(0.22, 0.22, 0.40);
-const VOL_BTN_PRESS: Color  = Color::srgb(0.06, 0.06, 0.12);
+const VOL_SLIDER_TRACK: Color = Color::srgb(0.12, 0.12, 0.22);
+const VOL_SLIDER_HOVER: Color = Color::srgb(0.18, 0.18, 0.30);
+const VOL_SLIDER_PRESS: Color = Color::srgb(0.08, 0.08, 0.14);
+const VOL_SLIDER_FILL: Color  = Color::srgb(0.45, 0.75, 1.0);
+const VOL_SLIDER_KNOB: Color  = Color::srgb(0.92, 0.96, 1.0);
 
 // ── States ───────────────────────────────────────────────────────────────────
 
@@ -100,8 +102,9 @@ struct JudgmentText { timer: f32 }
 
 // タイトル画面の SFX 音量スライダー
 #[derive(Component)] struct VolumeDisplay;
-#[derive(Component)] struct VolumeDownButton;
-#[derive(Component)] struct VolumeUpButton;
+#[derive(Component)] struct VolumeSlider;
+#[derive(Component)] struct VolumeSliderFill;
+#[derive(Component)] struct VolumeSliderKnob;
 
 #[cfg(target_arch = "wasm32")]
 #[derive(Component)]
@@ -141,9 +144,9 @@ fn main() {
             Update,
             (
                 title_input,
-                title_volume_buttons,
-                update_volume_display,
-                volume_button_visual,
+                title_volume_slider,
+                update_volume_slider_display,
+                volume_slider_visual,
             )
                 .run_if(in_state(AppState::Title)),
         )
@@ -236,30 +239,6 @@ fn spawn_button<M: Component>(
         });
 }
 
-/// 音量調整ボタン（小さめ）
-fn spawn_vol_button<M: Component>(parent: &mut ChildBuilder, label: &str, marker: M) {
-    parent
-        .spawn((
-            Button,
-            Node {
-                padding: UiRect::axes(Val::Px(14.0), Val::Px(6.0)),
-                border: UiRect::all(Val::Px(2.0)),
-                ..default()
-            },
-            BackgroundColor(VOL_BTN_NORMAL),
-            BorderColor(Color::srgb(0.3, 0.3, 0.5)),
-            BorderRadius::all(Val::Px(6.0)),
-            marker,
-        ))
-        .with_children(|b| {
-            b.spawn((
-                Text::new(label),
-                TextFont { font_size: 18.0, ..default() },
-                TextColor(Color::WHITE),
-            ));
-        });
-}
-
 // ── Title ────────────────────────────────────────────────────────────────────
 
 fn setup_title(mut commands: Commands, config: Res<AudioConfig>) {
@@ -297,22 +276,59 @@ fn setup_title(mut commands: Commands, config: Res<AudioConfig>) {
             p.spawn(Node {
                 flex_direction: FlexDirection::Row,
                 align_items: AlignItems::Center,
-                column_gap: Val::Px(8.0),
+                column_gap: Val::Px(12.0),
                 margin: UiRect::top(Val::Px(16.0)),
                 ..default()
             })
             .with_children(|row| {
-                // ラベル
                 row.spawn((
                     Text::new("SFX"),
                     TextFont { font_size: 16.0, ..default() },
                     TextColor(Color::srgb(0.5, 0.5, 0.7)),
                 ));
 
-                // [−] ボタン
-                spawn_vol_button(row, "−", VolumeDownButton);
+                row
+                    .spawn((
+                        Button,
+                        Node {
+                            width: Val::Px(180.0),
+                            height: Val::Px(22.0),
+                            border: UiRect::all(Val::Px(2.0)),
+                            align_items: AlignItems::Center,
+                            ..default()
+                        },
+                        RelativeCursorPosition::default(),
+                        BackgroundColor(VOL_SLIDER_TRACK),
+                        BorderColor(Color::srgb(0.3, 0.3, 0.5)),
+                        BorderRadius::all(Val::Px(999.0)),
+                        VolumeSlider,
+                    ))
+                    .with_children(|slider| {
+                        slider.spawn((
+                            Node {
+                                width: Val::Percent(config.volume * 100.0),
+                                height: Val::Percent(100.0),
+                                ..default()
+                            },
+                            BackgroundColor(VOL_SLIDER_FILL),
+                            BorderRadius::all(Val::Px(999.0)),
+                            VolumeSliderFill,
+                        ));
 
-                // 現在値テキスト（例: "60%"）
+                        slider.spawn((
+                            Node {
+                                position_type: PositionType::Absolute,
+                                left: Val::Percent((config.volume * 100.0 - 5.0).clamp(0.0, 90.0)),
+                                width: Val::Px(18.0),
+                                height: Val::Px(18.0),
+                                ..default()
+                            },
+                            BackgroundColor(VOL_SLIDER_KNOB),
+                            BorderRadius::all(Val::Px(999.0)),
+                            VolumeSliderKnob,
+                        ));
+                    });
+
                 row.spawn((
                     Text::new(format!("{:.0}%", config.volume * 100.0)),
                     TextFont { font_size: 16.0, ..default() },
@@ -324,9 +340,6 @@ fn setup_title(mut commands: Commands, config: Res<AudioConfig>) {
                     },
                     VolumeDisplay,
                 ));
-
-                // [+] ボタン
-                spawn_vol_button(row, "+", VolumeUpButton);
             });
         });
 }
@@ -335,13 +348,12 @@ fn title_input(
     mouse: Res<ButtonInput<MouseButton>>,
     touch: Res<Touches>,
     keys:  Res<ButtonInput<KeyCode>>,
-    // 音量ボタンが押されているときはゲーム開始しない
-    vol_buttons: Query<&Interaction, Or<(With<VolumeDownButton>, With<VolumeUpButton>)>>,
+    // スライダーが押されているときはゲーム開始しない
+    vol_slider: Query<&Interaction, With<VolumeSlider>>,
     mut next: ResMut<NextState<AppState>>,
     mut data: ResMut<GameData>,
 ) {
-    // UI ボタンがこのフレームで Pressed なら、そのクリック/タップを消費済みとして扱う
-    if vol_buttons.iter().any(|i| *i == Interaction::Pressed) {
+    if vol_slider.iter().any(|i| *i == Interaction::Pressed) {
         return;
     }
 
@@ -355,60 +367,58 @@ fn title_input(
     }
 }
 
-/// タイトル画面の [−]/[+] ボタンで SE 音量を 10% 刻みで変更。
-fn title_volume_buttons(
-    down_q: Query<&Interaction, (Changed<Interaction>, With<VolumeDownButton>)>,
-    up_q:   Query<&Interaction, (Changed<Interaction>, With<VolumeUpButton>)>,
+/// タイトル画面のスライダー操作で SE 音量を変更。
+fn title_volume_slider(
+    slider_q: Query<(&Interaction, &RelativeCursorPosition), With<VolumeSlider>>,
     config: Res<AudioConfig>,
     mut ev_vol: EventWriter<SetSfxVolume>,
-    mut ev_sfx: EventWriter<PlaySoundEffect>,
 ) {
-    for i in &down_q {
-        if *i == Interaction::Pressed {
-            let v = ((config.volume * 10.0).round() - 1.0).max(0.0) / 10.0;
-            ev_vol.send(SetSfxVolume(v));
-            if v > 0.0 {
-                ev_sfx.send(PlaySoundEffect(SoundEffect::UiClick));
+    for (interaction, cursor) in &slider_q {
+        if *interaction == Interaction::Pressed {
+            if let Some(pos) = cursor.normalized {
+                let v = pos.x.clamp(0.0, 1.0);
+                if (v - config.volume).abs() >= 0.005 {
+                    ev_vol.send(SetSfxVolume(v));
+                }
             }
         }
     }
-    for i in &up_q {
-        if *i == Interaction::Pressed {
-            let v = ((config.volume * 10.0).round() + 1.0).min(10.0) / 10.0;
-            ev_vol.send(SetSfxVolume(v));
-            ev_sfx.send(PlaySoundEffect(SoundEffect::UiClick));
-        }
-    }
 }
 
-/// AudioConfig が変わったら VolumeDisplay テキストを更新。
-fn update_volume_display(
+/// AudioConfig が変わったらスライダーと表示を更新。
+fn update_volume_slider_display(
     config: Res<AudioConfig>,
-    mut q: Query<&mut Text, With<VolumeDisplay>>,
+    mut display_q: Query<&mut Text, With<VolumeDisplay>>,
+    mut fill_q: Query<&mut Node, (With<VolumeSliderFill>, Without<VolumeSliderKnob>, Without<VolumeDisplay>)>,
+    mut knob_q: Query<&mut Node, (With<VolumeSliderKnob>, Without<VolumeSliderFill>, Without<VolumeDisplay>)>,
 ) {
     if config.is_changed() {
-        for mut t in &mut q {
+        for mut t in &mut display_q {
             **t = format!("{:.0}%", config.volume * 100.0);
+        }
+
+        for mut node in &mut fill_q {
+            node.width = Val::Percent(config.volume * 100.0);
+        }
+
+        for mut node in &mut knob_q {
+            node.left = Val::Percent((config.volume * 100.0 - 5.0).clamp(0.0, 90.0));
         }
     }
 }
 
-/// 音量ボタンのホバー/プレス色。
-fn volume_button_visual(
-    mut down_q: Query<
+/// 音量スライダーのホバー/プレス色。
+fn volume_slider_visual(
+    mut slider_q: Query<
         (&Interaction, &mut BackgroundColor),
-        (Changed<Interaction>, With<VolumeDownButton>, Without<VolumeUpButton>),
-    >,
-    mut up_q: Query<
-        (&Interaction, &mut BackgroundColor),
-        (Changed<Interaction>, With<VolumeUpButton>, Without<VolumeDownButton>),
+        (Changed<Interaction>, With<VolumeSlider>),
     >,
 ) {
-    for (i, mut bg) in down_q.iter_mut().chain(up_q.iter_mut()) {
+    for (i, mut bg) in &mut slider_q {
         bg.0 = match i {
-            Interaction::Pressed  => VOL_BTN_PRESS,
-            Interaction::Hovered  => VOL_BTN_HOVER,
-            Interaction::None     => VOL_BTN_NORMAL,
+            Interaction::Pressed  => VOL_SLIDER_PRESS,
+            Interaction::Hovered  => VOL_SLIDER_HOVER,
+            Interaction::None     => VOL_SLIDER_TRACK,
         };
     }
 }

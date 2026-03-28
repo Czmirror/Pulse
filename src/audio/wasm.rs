@@ -144,36 +144,43 @@ fn create_inner(volume: f32) -> Result<WasmAudioInner, JsValue> {
     Ok(WasmAudioInner { ctx, master_gain, hit_perfect, hit_good, miss, combo })
 }
 
-/// 排他的 World アクセスで NonSend リソースを登録する。
+/// モバイルの autoplay 制約に合わせて、AudioContext 自体も
+/// 最初のユーザー操作時まで遅延初期化する。
 fn setup_audio_wasm(world: &mut World) {
-    let volume = world.resource::<AudioConfig>().volume;
-    match create_inner(volume) {
-        Ok(inner) => {
-            world.insert_non_send_resource(WasmAudio(Some(inner)));
-        }
-        Err(e) => {
-            warn!("[WASM Audio] Setup FAILED ({:?}). Game will run silently.", e);
-            world.insert_non_send_resource(WasmAudio(None));
-        }
-    }
+    world.insert_non_send_resource(WasmAudio(None));
 }
 
 // ── AudioContext アンロック（初回入力時）─────────────────────────────────────
 
 fn unlock_audio_wasm(
-    audio: Option<NonSend<WasmAudio>>,
+    audio: Option<NonSendMut<WasmAudio>>,
+    config: Res<AudioConfig>,
     mouse: Res<ButtonInput<MouseButton>>,
     touch: Res<Touches>,
     keys:  Res<ButtonInput<KeyCode>>,
 ) {
-    let Some(audio) = audio else { return };
-    let Some(inner) = &audio.0 else { return };
-
     let any_input = mouse.get_just_pressed().next().is_some()
         || touch.any_just_pressed()
         || keys.get_just_pressed().next().is_some();
 
     if !any_input { return; }
+
+    let Some(mut audio) = audio else { return };
+
+    if audio.0.is_none() {
+        match create_inner(config.volume) {
+            Ok(inner) => {
+                info!("[WASM Audio] Unlock: initialized AudioContext on first user gesture");
+                audio.0 = Some(inner);
+            }
+            Err(e) => {
+                warn!("[WASM Audio] Unlock: setup failed ({:?}). Game will run silently.", e);
+                return;
+            }
+        }
+    }
+
+    let Some(inner) = &audio.0 else { return };
 
     let state_before = ctx_state_str(&inner.ctx);
     match inner.ctx.resume() {
