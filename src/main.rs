@@ -17,6 +17,7 @@ const PERFECT_WINDOW: f32 = 10.0;
 const GOOD_WINDOW: f32 = 26.0;
 const MAX_COMBO_MULTIPLIER: u32 = 4;
 const COMBO_MILESTONE: u32 = 5;
+const COMBO_PULSE_DURATION: f32 = 0.24;
 
 #[cfg(target_arch = "wasm32")]
 const GAME_URL: &str = "https://czmirror.github.io/Pulse/";
@@ -83,6 +84,12 @@ impl GameData {
     }
 }
 
+#[derive(Resource, Default)]
+struct ComboDisplayFx {
+    last_combo:  u32,
+    pulse_timer: f32,
+}
+
 // ── Components ───────────────────────────────────────────────────────────────
 
 #[derive(Component)]
@@ -93,6 +100,7 @@ struct JudgmentText { timer: f32 }
 
 #[derive(Component)] struct ScoreText;
 #[derive(Component)] struct ComboText;
+#[derive(Component)] struct ComboSubText;
 #[derive(Component)] struct TimerText;
 #[derive(Component)] struct TitleScreen;
 #[derive(Component)] struct GameOverScreen;
@@ -135,6 +143,7 @@ fn main() {
     app.add_plugins(AudioPlugin)
         .insert_resource(ClearColor(BG_COLOR))
         .init_resource::<GameData>()
+        .init_resource::<ComboDisplayFx>()
         .init_state::<AppState>()
         // Title
         .add_systems(Startup, setup_camera)
@@ -162,6 +171,7 @@ fn main() {
                 handle_input,
                 miss_check,
                 update_hud,
+                animate_combo_display,
                 update_judgment_texts,
             )
                 .chain()
@@ -429,7 +439,11 @@ fn setup_game(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
+    mut combo_fx: ResMut<ComboDisplayFx>,
 ) {
+    combo_fx.last_combo = 0;
+    combo_fx.pulse_timer = 0.0;
+
     commands.spawn((
         Mesh2d(meshes.add(annulus_mesh(TARGET_RADIUS, TARGET_THICKNESS))),
         MeshMaterial2d(materials.add(TARGET_COLOR)),
@@ -455,19 +469,49 @@ fn setup_game(
                 Text::new("30.0"),
                 TextFont { font_size: 24.0, ..default() },
                 TextColor(Color::WHITE),
+                Node {
+                    position_type: PositionType::Absolute,
+                    top: Val::Px(16.0),
+                    left: Val::Px(16.0),
+                    ..default()
+                },
                 TimerText,
             ));
             p.spawn((
                 Text::new("0"),
                 TextFont { font_size: 48.0, ..default() },
                 TextColor(Color::WHITE),
+                Node {
+                    position_type: PositionType::Absolute,
+                    top: Val::Px(46.0),
+                    left: Val::Px(16.0),
+                    ..default()
+                },
                 ScoreText,
             ));
             p.spawn((
                 Text::new(""),
-                TextFont { font_size: 22.0, ..default() },
-                TextColor(Color::srgb(0.8, 0.9, 1.0)),
+                TextFont { font_size: 54.0, ..default() },
+                TextColor(Color::srgba(0.8, 0.9, 1.0, 0.0)),
+                Node {
+                    position_type: PositionType::Absolute,
+                    top: Val::Px(126.0),
+                    left: Val::Percent(50.0),
+                    ..default()
+                },
                 ComboText,
+            ));
+            p.spawn((
+                Text::new(""),
+                TextFont { font_size: 20.0, ..default() },
+                TextColor(Color::srgba(0.7, 0.82, 1.0, 0.0)),
+                Node {
+                    position_type: PositionType::Absolute,
+                    top: Val::Px(180.0),
+                    left: Val::Percent(50.0),
+                    ..default()
+                },
+                ComboSubText,
             ));
         });
 }
@@ -635,18 +679,82 @@ fn miss_check(
 fn update_hud(
     data: Res<GameData>,
     mut score_q: Query<&mut Text, (With<ScoreText>, Without<ComboText>, Without<TimerText>)>,
-    mut combo_q: Query<&mut Text, (With<ComboText>, Without<ScoreText>, Without<TimerText>)>,
+    mut combo_q: Query<&mut Text, (With<ComboText>, Without<ScoreText>, Without<TimerText>, Without<ComboSubText>)>,
+    mut combo_sub_q: Query<&mut Text, (With<ComboSubText>, Without<ComboText>, Without<ScoreText>, Without<TimerText>)>,
     mut timer_q: Query<&mut Text, (With<TimerText>, Without<ScoreText>, Without<ComboText>)>,
 ) {
     for mut t in &mut score_q { **t = format!("{}", data.score); }
     for mut t in &mut combo_q {
         if data.combo >= 2 {
-            **t = format!("{}  ×{}", data.combo, data.combo_multiplier());
+            **t = format!("{} COMBO", data.combo);
+        } else {
+            **t = String::new();
+        }
+    }
+    for mut t in &mut combo_sub_q {
+        if data.combo >= 2 {
+            **t = format!("x{}", data.combo_multiplier());
         } else {
             **t = String::new();
         }
     }
     for mut t in &mut timer_q { **t = format!("{:.1}", data.time_left.max(0.0)); }
+}
+
+fn animate_combo_display(
+    time: Res<Time>,
+    data: Res<GameData>,
+    mut combo_fx: ResMut<ComboDisplayFx>,
+    mut combo_q: Query<
+        (&mut TextFont, &mut TextColor, &mut Node),
+        (With<ComboText>, Without<ComboSubText>),
+    >,
+    mut combo_sub_q: Query<
+        (&mut TextFont, &mut TextColor, &mut Node),
+        (With<ComboSubText>, Without<ComboText>),
+    >,
+) {
+    if combo_fx.last_combo != data.combo {
+        if data.combo > combo_fx.last_combo {
+            combo_fx.pulse_timer = COMBO_PULSE_DURATION;
+        } else if data.combo < combo_fx.last_combo {
+            combo_fx.pulse_timer = 0.0;
+        }
+        combo_fx.last_combo = data.combo;
+    }
+
+    combo_fx.pulse_timer = (combo_fx.pulse_timer - time.delta_secs()).max(0.0);
+    let pulse = if COMBO_PULSE_DURATION > 0.0 {
+        combo_fx.pulse_timer / COMBO_PULSE_DURATION
+    } else {
+        0.0
+    };
+    let combo_visible = data.combo >= 2;
+    let alpha = if combo_visible { 0.72 + pulse * 0.28 } else { 0.0 };
+    let font_size = if combo_visible { 54.0 + pulse * 18.0 } else { 54.0 };
+    let sub_font_size = if combo_visible { 20.0 + pulse * 6.0 } else { 20.0 };
+    let left = Val::Percent(50.0 - (font_size * 0.14).clamp(5.0, 12.0));
+    let sub_left = Val::Percent(50.0 - (sub_font_size * 0.20).clamp(3.0, 8.0));
+
+    for (mut font, mut color, mut node) in &mut combo_q {
+        font.font_size = font_size;
+        color.0 = if combo_visible {
+            Color::srgba(0.78 + pulse * 0.22, 0.88 + pulse * 0.10, 1.0, alpha)
+        } else {
+            Color::srgba(0.8, 0.9, 1.0, 0.0)
+        };
+        node.left = left;
+    }
+
+    for (mut font, mut color, mut node) in &mut combo_sub_q {
+        font.font_size = sub_font_size;
+        color.0 = if combo_visible {
+            Color::srgba(0.75, 0.86, 1.0, alpha * 0.95)
+        } else {
+            Color::srgba(0.7, 0.82, 1.0, 0.0)
+        };
+        node.left = sub_left;
+    }
 }
 
 fn update_judgment_texts(
@@ -760,7 +868,7 @@ fn share_button_system(
 ) {
     for (interaction, mut bg) in &mut q {
         bg.0 = match interaction {
-            Interaction::Pressed => { open_tweet(data.score); SHARE_PRESS }
+            Interaction::Pressed => { open_tweet(data.score, data.best_combo); SHARE_PRESS }
             Interaction::Hovered => SHARE_HOVER,
             Interaction::None    => SHARE_NORMAL,
         };
@@ -770,9 +878,9 @@ fn share_button_system(
 // ── X (Twitter) share ─────────────────────────────────────────────────────────
 
 #[cfg(target_arch = "wasm32")]
-fn open_tweet(score: u32) {
+fn open_tweet(score: u32, best_combo: u32) {
     let text = format!(
-        "🎵 PULSE - Score: {score}\nシンプルなリズムゲームに挑戦！\n{GAME_URL}\n#PULSE #ゲーム制作 #bevy"
+        "🎵 PULSE - Score: {score} / Max Combo: {best_combo}\nシンプルなリズムゲームに挑戦！\n{GAME_URL}\n#PULSE #ゲーム制作 #bevy"
     );
     let url = format!(
         "https://twitter.com/intent/tweet?text={}",
