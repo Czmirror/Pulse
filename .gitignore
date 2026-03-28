@@ -1,1 +1,4 @@
 /target/
+# wasm-bindgen generated artifacts (produced by CI)
+web/pulse.js
+web/pulse_bg.wasm
