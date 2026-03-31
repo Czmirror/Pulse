@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>PULSE Instagram Slides</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #111;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 32px;
+    padding: 40px 20px;
+    font-family: 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif;
+  }
+
+  .label {
+    color: #888;
+    font-size: 13px;
+    margin-bottom: 6px;
+    text-align: center;
+  }
+
+  /* ── 共通スライドサイズ 1080×1080 ── */
+  .slide {
+    width: 1080px;
+    height: 1080px;
+    position: relative;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+
+  /* ドット装飾 */
+  .dots {
+    position: absolute;
+    display: grid;
+    gap: 10px;
+  }
+  .dots span {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.25);
+    display: block;
+  }
+
+  /* ══════════════════════════════════
+     スライド 1：フック
+  ══════════════════════════════════ */
+  #s1 {
+    background: linear-gradient(145deg, #0d0d1a 0%, #1a1040 50%, #0d1535 100%);
+  }
+  #s1 .pulse-ring {
+    position: absolute;
+    border-radius: 50%;
+    border: 3px solid rgba(100,180,255,0.15);
+  }
+  #s1 .ring1 { width: 800px; height: 800px; top: 140px; left: 140px; }
+  #s1 .ring2 { width: 580px; height: 580px; top: 250px; left: 250px; border-color: rgba(100,180,255,0.25); }
+  #s1 .ring3 { width: 360px; height: 360px; top: 360px; left: 360px; border-color: rgba(100,180,255,0.45); border-width: 4px; }
+  #s1 .ring-target {
+    position: absolute;
+    width: 240px; height: 240px;
+    border-radius: 50%;
+    border: 5px solid rgba(80,140,220,0.6);
+    top: 420px; left: 420px;
+  }
+  #s1 .pulse-wave {
+    position: absolute;
+    width: 500px; height: 500px;
+    border-radius: 50%;
+    border: 4px solid rgba(100,200,255,0.7);
+    top: 290px; left: 290px;
+    animation: none;
+  }
+  #s1 .content {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    padding: 80px 90px;
+    background: linear-gradient(to top, rgba(5,5,20,0.95) 60%, transparent);
+  }
+  #s1 .tag {
+    display: inline-block;
+    background: rgba(100,180,255,0.2);
+    border: 1px solid rgba(100,180,255,0.5);
+    color: #80c8ff;
+    font-size: 26px;
+    padding: 8px 24px;
+    border-radius: 40px;
+    margin-bottom: 32px;
+    letter-spacing: 0.1em;
+  }
+  #s1 h1 {
+    font-size: 88px;
+    font-weight: 900;
+    color: #ffffff;
+    line-height: 1.1;
+    margin-bottom: 28px;
+    letter-spacing: -0.01em;
+  }
+  #s1 h1 span { color: #60b8ff; }
+  #s1 p {
+    font-size: 32px;
+    color: rgba(255,255,255,0.6);
+    line-height: 1.5;
+  }
+  #s1 .logo {
+    position: absolute;
+    top: 60px; left: 90px;
+    font-size: 34px;
+    font-weight: 900;
+    color: rgba(255,255,255,0.9);
+    letter-spacing: 0.25em;
+  }
+
+  /* ══════════════════════════════════
+     スライド 2：ゲーム紹介
+  ══════════════════════════════════ */
+  #s2 {
+    background: linear-gradient(160deg, #f0f2ff 0%, #dde4ff 50%, #cdd6ff 100%);
+  }
+  #s2 .top-bar {
+    position: absolute;
+    top: 72px; left: 90px; right: 90px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  #s2 .top-bar .brand {
+    font-size: 32px;
+    font-weight: 900;
+    color: #2a2070;
+    letter-spacing: 0.2em;
+  }
+  #s2 .top-bar .sub {
+    font-size: 24px;
+    color: #5560aa;
+    font-weight: 500;
+  }
+  #s2 .center-art {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -52%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+  }
+  #s2 .game-preview {
+    width: 480px;
+    height: 480px;
+    border-radius: 36px;
+    background: #0d0d1a;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    box-shadow: 0 24px 80px rgba(60,40,150,0.35);
+    overflow: hidden;
+  }
+  #s2 .game-preview .gp-ring {
+    position: absolute;
+    border-radius: 50%;
+  }
+  #s2 .game-preview .gp-r1 {
+    width: 340px; height: 340px;
+    border: 3px solid rgba(100,180,255,0.12);
+  }
+  #s2 .game-preview .gp-r2 {
+    width: 240px; height: 240px;
+    border: 3px solid rgba(100,180,255,0.22);
+  }
+  #s2 .game-preview .gp-target {
+    width: 160px; height: 160px;
+    border: 5px solid rgba(80,140,220,0.7);
+  }
+  #s2 .game-preview .gp-wave {
+    width: 280px; height: 280px;
+    border: 4px solid rgba(100,200,255,0.8);
+  }
+  #s2 .game-preview .gp-label {
+    position: absolute;
+    top: 20px; right: 20px;
+    background: rgba(255,200,50,0.9);
+    color: #000;
+    font-size: 20px;
+    font-weight: 900;
+    padding: 6px 14px;
+    border-radius: 20px;
+    letter-spacing: 0.1em;
+  }
+  #s2 .bottom-info {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    padding: 60px 90px 72px;
+    background: linear-gradient(to top, rgba(210,220,255,0.9) 70%, transparent);
+  }
+  #s2 .bottom-info h2 {
+    font-size: 68px;
+    font-weight: 900;
+    color: #1a1560;
+    margin-bottom: 20px;
+    line-height: 1.15;
+  }
+  #s2 .bottom-info p {
+    font-size: 30px;
+    color: #4050a0;
+    line-height: 1.6;
+  }
+
+  /* ══════════════════════════════════
+     スライド 3：遊び方
+  ══════════════════════════════════ */
+  #s3 {
+    background: linear-gradient(160deg, #f0f2ff 0%, #dde4ff 50%, #cdd6ff 100%);
+  }
+  #s3 .header {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    padding: 72px 90px 0;
+  }
+  #s3 .header-pill {
+    display: inline-block;
+    background: #5560dd;
+    color: white;
+    font-size: 28px;
+    font-weight: 900;
+    padding: 14px 48px;
+    border-radius: 50px;
+    letter-spacing: 0.05em;
+    margin-bottom: 56px;
+  }
+  #s3 .steps {
+    position: absolute;
+    top: 210px; left: 90px; right: 90px;
+    display: flex;
+    flex-direction: column;
+    gap: 40px;
+  }
+  #s3 .step {
+    background: rgba(255,255,255,0.75);
+    border-radius: 24px;
+    padding: 44px 52px;
+    display: flex;
+    align-items: center;
+    gap: 44px;
+    box-shadow: 0 4px 24px rgba(80,80,180,0.1);
+  }
+  #s3 .step-num {
+    width: 80px; height: 80px;
+    border-radius: 50%;
+    background: #5560dd;
+    color: white;
+    font-size: 36px;
+    font-weight: 900;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  #s3 .step-text h3 {
+    font-size: 38px;
+    font-weight: 900;
+    color: #1a1560;
+    margin-bottom: 8px;
+  }
+  #s3 .step-text p {
+    font-size: 26px;
+    color: #5060a0;
+    line-height: 1.5;
+  }
+  #s3 .judgment-row {
+    position: absolute;
+    bottom: 80px; left: 90px; right: 90px;
+    display: flex;
+    gap: 28px;
+  }
+  #s3 .judgment {
+    flex: 1;
+    border-radius: 20px;
+    padding: 32px 20px;
+    text-align: center;
+  }
+  #s3 .judgment h4 { font-size: 34px; font-weight: 900; margin-bottom: 10px; }
+  #s3 .judgment p  { font-size: 22px; }
+  #s3 .j-perfect { background: rgba(255,235,50,0.2); }
+  #s3 .j-perfect h4 { color: #c8a000; }
+  #s3 .j-perfect p  { color: #a08000; }
+  #s3 .j-good    { background: rgba(50,200,100,0.15); }
+  #s3 .j-good h4 { color: #189040; }
+  #s3 .j-good p  { color: #107030; }
+  #s3 .j-miss    { background: rgba(220,60,60,0.12); }
+  #s3 .j-miss h4 { color: #c03030; }
+  #s3 .j-miss p  { color: #903030; }
+
+  /* ══════════════════════════════════
+     スライド 4：技術スタック
+  ══════════════════════════════════ */
+  #s4 {
+    background: linear-gradient(145deg, #0a0a18 0%, #141030 50%, #0c1428 100%);
+  }
+  #s4 .header {
+    position: absolute;
+    top: 72px; left: 90px; right: 90px;
+  }
+  #s4 .header-sub {
+    font-size: 26px;
+    color: #7080b0;
+    letter-spacing: 0.15em;
+    margin-bottom: 16px;
+    font-weight: 600;
+  }
+  #s4 .header h2 {
+    font-size: 64px;
+    font-weight: 900;
+    color: #ffffff;
+    line-height: 1.15;
+  }
+  #s4 .header h2 span { color: #60b0ff; }
+  #s4 .cards {
+    position: absolute;
+    top: 280px; left: 90px; right: 90px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 28px;
+  }
+  #s4 .card {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 24px;
+    padding: 44px 48px;
+  }
+  #s4 .card-icon {
+    font-size: 42px;
+    margin-bottom: 16px;
+  }
+  #s4 .card h3 {
+    font-size: 38px;
+    font-weight: 900;
+    color: #ffffff;
+    margin-bottom: 12px;
+  }
+  #s4 .card p {
+    font-size: 24px;
+    color: #8090b8;
+    line-height: 1.5;
+  }
+  #s4 .bottom-note {
+    position: absolute;
+    bottom: 72px; left: 90px; right: 90px;
+    background: rgba(100,160,255,0.1);
+    border: 1px solid rgba(100,160,255,0.3);
+    border-radius: 20px;
+    padding: 36px 52px;
+    display: flex;
+    align-items: center;
+    gap: 32px;
+  }
+  #s4 .bottom-note .ai-badge {
+    background: #5560dd;
+    color: white;
+    font-size: 22px;
+    font-weight: 900;
+    padding: 10px 24px;
+    border-radius: 30px;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  #s4 .bottom-note p {
+    font-size: 26px;
+    color: #a0b0d8;
+    line-height: 1.5;
+  }
+
+  /* ══════════════════════════════════
+     スライド 5：CTA
+  ══════════════════════════════════ */
+  #s5 {
+    background: linear-gradient(145deg, #0d0d1a 0%, #1a1040 50%, #0d1535 100%);
+  }
+  #s5 .bg-ring {
+    position: absolute;
+    border-radius: 50%;
+    border: 2px solid rgba(100,180,255,0.08);
+  }
+  #s5 .bg-r1 { width: 900px; height: 900px; top: 90px; left: 90px; }
+  #s5 .bg-r2 { width: 680px; height: 680px; top: 200px; left: 200px; }
+  #s5 .bg-r3 { width: 460px; height: 460px; top: 310px; left: 310px; border-color: rgba(100,180,255,0.18); }
+  #s5 .content {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    width: 100%;
+    padding: 0 90px;
+  }
+  #s5 .game-title {
+    font-size: 130px;
+    font-weight: 900;
+    color: #ffffff;
+    letter-spacing: 0.2em;
+    margin-bottom: 20px;
+  }
+  #s5 .tagline {
+    font-size: 34px;
+    color: #7090c0;
+    letter-spacing: 0.12em;
+    margin-bottom: 72px;
+  }
+  #s5 .url-box {
+    display: inline-block;
+    background: rgba(255,255,255,0.06);
+    border: 2px solid rgba(100,180,255,0.4);
+    border-radius: 20px;
+    padding: 28px 60px;
+    margin-bottom: 56px;
+  }
+  #s5 .url-box span {
+    font-size: 28px;
+    color: #80c0ff;
+    letter-spacing: 0.03em;
+    font-weight: 600;
+  }
+  #s5 .cta-text {
+    font-size: 42px;
+    font-weight: 900;
+    color: #ffffff;
+    margin-bottom: 14px;
+  }
+  #s5 .cta-sub {
+    font-size: 26px;
+    color: #6070a0;
+  }
+  #s5 .tech-chips {
+    position: absolute;
+    bottom: 72px; left: 0; right: 0;
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+  }
+  #s5 .chip {
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 30px;
+    padding: 12px 28px;
+    font-size: 22px;
+    color: #8090b0;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+  }
+
+  /* ドット グリッド (右上装飾) */
+  .dot-grid {
+    position: absolute;
+    right: 72px; top: 72px;
+    display: grid;
+    grid-template-columns: repeat(5, 10px);
+    gap: 12px;
+  }
+  .dot-grid span {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.15);
+    display: block;
+  }
+  .dot-grid.dark span { background: rgba(80,80,180,0.25); }
+
+  /* スライド番号 */
+  .slide-num {
+    position: absolute;
+    top: 32px; right: 32px;
+    background: rgba(0,0,0,0.3);
+    color: rgba(255,255,255,0.5);
+    font-size: 20px;
+    padding: 6px 14px;
+    border-radius: 20px;
+  }
+  .slide-num.dark {
+    background: rgba(80,80,180,0.15);
+    color: rgba(50,50,130,0.6);
+  }
+</style>
+</head>
+<body>
+
+<!-- ────────────────────────────
+     SLIDE 1 / 5 : フック
+──────────────────────────────── -->
+<p class="label">▼ スライド 1 ／ 5　（1080×1080 px）</p>
+<div class="slide" id="s1">
+  <div class="pulse-ring ring1"></div>
+  <div class="pulse-ring ring2"></div>
+  <div class="pulse-ring ring3"></div>
+  <div class="pulse-ring ring-target"></div>
+  <div class="pulse-ring pulse-wave"></div>
+
+  <div class="dot-grid">
+    <span></span><span></span><span></span><span></span><span></span>
+    <span></span><span></span><span></span><span></span><span></span>
+    <span></span><span></span><span></span><span></span><span></span>
+    <span></span><span></span><span></span><span></span><span></span>
+    <span></span><span></span><span></span><span></span><span></span>
+  </div>
+
+  <div class="logo">PULSE</div>
+  <div class="slide-num">1/5</div>
+
+  <div class="content">
+    <div class="tag">ブラウザゲーム</div>
+    <h1>AIと一緒に<br><span>Rustで</span><br>ゲームを作った</h1>
+    <p>タップするだけのリズムゲーム、<br>ブラウザで今すぐ遊べます</p>
+  </div>
+</div>
+
+<!-- ────────────────────────────
+     SLIDE 2 / 5 : ゲーム紹介
+──────────────────────────────── -->
+<p class="label">▼ スライド 2 ／ 5</p>
+<div class="slide" id="s2">
+  <div class="dot-grid dark">
+    <span></span><span></span><span></span><span></span><span></span>
+    <span></span><span></span><span></span><span></span><span></span>
+    <span></span><span></span><span></span><span></span><span></span>
+    <span></span><span></span><span></span><span></span><span></span>
+    <span></span><span></span><span></span><span></span><span></span>
+  </div>
+  <div class="slide-num dark">2/5</div>
+
+  <div class="top-bar">
+    <div class="brand">PULSE</div>
+    <div class="sub">リズムゲーム</div>
+  </div>
+
+  <div style="position:absolute;top:180px;left:50%;transform:translateX(-50%);">
+    <div class="game-preview">
+      <div class="gp-ring gp-r1"></div>
+      <div class="gp-ring gp-r2"></div>
+      <div class="gp-ring gp-target"></div>
+      <div class="gp-ring gp-wave"></div>
+      <div class="gp-label">PERFECT!</div>
+    </div>
+  </div>
+
+  <div class="bottom-info">
+    <h2>リングに<br>合わせてタップ</h2>
+    <p>外から縮んでくるパルス波が<br>リングと重なった瞬間にクリック。<br>制限時間30秒、スコアを競おう。</p>
+  </div>
+</div>
+
+<!-- ────────────────────────────
+     SLIDE 3 / 5 : 遊び方
+──────────────────────────────── -->
+<p class="label">▼ スライド 3 ／ 5</p>
+<div class="slide" id="s3">
+  <div class="dot-grid dark">
+    <span></span><span></span><span></span><span></span><span></span>
+    <span></span><span></span><span></span><span></span><span></span>
+    <span></span><span></span><span></span><span></span><span></span>
+    <span></span><span></span><span></span><span></span><span></span>
+    <span></span><span></span><span></span><span></span><span></span>
+  </div>
+  <div class="slide-num dark">3/5</div>
+
+  <div class="header">
+    <div class="header-pill">遊び方</div>
+  </div>
+
+  <div class="steps">
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-text">
+        <h3>ページを開く</h3>
+        <p>インストール不要。<br>ブラウザだけで即プレイ。</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-text">
+        <h3>タップ / クリック</h3>
+        <p>パルス波がリングに重なった瞬間を狙う。<br>スマホでもPCでも遊べる。</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-text">
+        <h3>コンボでスコアアップ</h3>
+        <p>連続成功で得点倍率が上がる。<br>30秒でハイスコアを目指せ。</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="judgment-row">
+    <div class="judgment j-perfect">
+      <h4>PERFECT</h4>
+      <p>ドンピシャ！</p>
+    </div>
+    <div class="judgment j-good">
+      <h4>GOOD</h4>
+      <p>惜しい</p>
+    </div>
+    <div class="judgment j-miss">
+      <h4>MISS</h4>
+      <p>コンボ切れ</p>
+    </div>
+  </div>
+</div>
+
+<!-- ────────────────────────────
+     SLIDE 4 / 5 : 技術スタック
+──────────────────────────────── -->
+<p class="label">▼ スライド 4 ／ 5</p>
+<div class="slide" id="s4">
+  <div class="dot-grid">
+    <span></span><span></span><span></span><span></span><span></span>
+    <span></span><span></span><span></span><span></span><span></span>
+    <span></span><span></span><span></span><span></span><span></span>
+    <span></span><span></span><span></span><span></span><span></span>
+    <span></span><span></span><span></span><span></span><span></span>
+  </div>
+  <div class="slide-num">4/5</div>
+
+  <div class="header">
+    <div class="header-sub">HOW IT'S MADE</div>
+    <h2>Rustで作る<br><span>ブラウザゲーム</span></h2>
+  </div>
+
+  <div class="cards">
+    <div class="card">
+      <div class="card-icon">🦀</div>
+      <h3>Rust</h3>
+      <p>型安全・高速。<br>ゲームロジックを実装。</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">🎮</div>
+      <h3>Bevy 0.15</h3>
+      <p>Rust製ゲームエンジン。<br>ECSアーキテクチャ。</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">🌐</div>
+      <h3>WebAssembly</h3>
+      <p>RustをWASMにコンパイル。<br>ブラウザで直接動作。</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">🎵</div>
+      <h3>Web Audio API</h3>
+      <p>WASM版は直接呼び出し。<br>ブラウザ制限も対処済み。</p>
+    </div>
+  </div>
+
+  <div class="bottom-note">
+    <div class="ai-badge">Claude Code</div>
+    <p>設計・コード生成・バグ修正まで<br>AIとペアプログラミングで開発</p>
+  </div>
+</div>
+
+<!-- ────────────────────────────
+     SLIDE 5 / 5 : CTA
+──────────────────────────────── -->
+<p class="label">▼ スライド 5 ／ 5</p>
+<div class="slide" id="s5">
+  <div class="bg-ring bg-r1"></div>
+  <div class="bg-ring bg-r2"></div>
+  <div class="bg-ring bg-r3"></div>
+
+  <div class="dot-grid">
+    <span></span><span></span><span></span><span></span><span></span>
+    <span></span><span></span><span></span><span></span><span></span>
+    <span></span><span></span><span></span><span></span><span></span>
+    <span></span><span></span><span></span><span></span><span></span>
+    <span></span><span></span><span></span><span></span><span></span>
+  </div>
+  <div class="slide-num">5/5</div>
+
+  <div class="content">
+    <div class="game-title">PULSE</div>
+    <div class="tagline">Rust × Bevy × WebAssembly</div>
+    <div class="url-box">
+      <span>czmirror.github.io/Pulse/</span>
+    </div>
+    <div class="cta-text">ブラウザで今すぐ遊べます</div>
+    <div class="cta-sub">スマホ・PC対応 ／ インストール不要</div>
+  </div>
+
+  <div class="tech-chips">
+    <div class="chip">#Rust</div>
+    <div class="chip">#WebAssembly</div>
+    <div class="chip">#GameDev</div>
+    <div class="chip">#ClaudeCode</div>
+  </div>
+</div>
+
+</body>
+</html>
