@@ -47,3 +47,7 @@ python3 -m http.server 8080 --directory web
 | Bevy | 0.15 |
 | wasm-bindgen | 0.2 |
 | Rust edition | 2021 |
+
+## フォント
+
+画面表示に Inter Regular を使用しています。配布元は cosmic-text 0.12.1 に同梱された Inter で、ライセンスは [SIL Open Font License 1.1](assets/fonts/Inter-LICENSE) です。
