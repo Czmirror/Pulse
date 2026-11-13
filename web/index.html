@@ -41,16 +41,21 @@
       background: rgba(10, 14, 26, 0.96);
       color: #eef3ff;
       font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      white-space: pre-wrap;
+
     }
     body.error #game-stage { display: none; }
     body.error #error-panel { display: block; }
     #error-panel strong { display: block; margin-bottom: 8px; font-size: 18px; }
-    #error-panel code {
-      display: block;
-      margin-top: 12px;
-      color: #9fc2ff;
-      font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+    #error-panel button {
+      margin-top: 16px;
+      min-height: 44px;
+      padding: 0 16px;
+      border: 1px solid #72e8fa;
+      border-radius: 8px;
+      background: #10293d;
+      color: inherit;
+      font: inherit;
+      cursor: pointer;
     }
   </style>
 </head>
@@ -58,34 +63,44 @@
   <main id="game-stage" aria-label="Pulse">
     <canvas id="bevy-canvas"></canvas>
   </main>
-  <div id="error-panel" role="alert" aria-live="polite"></div>
+  <div id="error-panel" lang="en">
+    <div role="alert">
+      <strong>Pulse could not start.</strong>
+      <p id="error-message"></p>
+    </div>
+    <button type="button" id="retry-startup">Reload game</button>
+  </div>
   <script type="module">
-    import init from "./pulse.js";
+    const errorMessage = document.getElementById("error-message");
+    const retryButton = document.getElementById("retry-startup");
+    retryButton.addEventListener("click", () => window.location.reload());
 
-    const errorPanel = document.getElementById("error-panel");
-
-    function showError(message, detail = "") {
+    function showError(message) {
       document.body.classList.add("error");
-      errorPanel.innerHTML = `<strong>PULSE could not start.</strong>${message}${detail ? `<code>${detail}</code>` : ""}`;
+      errorMessage.textContent = message;
+      retryButton.focus();
     }
 
-    function supportsWebGl2() {
+    async function startGame() {
       const canvas = document.createElement("canvas");
-      return !!canvas.getContext("webgl2");
+      if (!("gpu" in navigator) && !canvas.getContext("webgl2")) {
+        showError("This browser does not support WebGL2 or WebGPU. Try opening Pulse in an up-to-date browser.");
+        return;
+      }
+
+      const { default: init } = await import("./pulse.js");
+      await init();
     }
 
-    function supportsWebGpu() {
-      return typeof navigator !== "undefined" && "gpu" in navigator;
-    }
+    startGame().catch((error) => {
+      // winitはブラウザのイベントループに制御を渡す際にこの例外を投げる。
+      if (error?.message === "Using exceptions for control flow, don't mind me. This isn't actually an error!") {
+        return;
+      }
 
-    if (!supportsWebGl2() && !supportsWebGpu()) {
-      showError(
-        "This browser does not support WebGL2 or WebGPU, so the game cannot render.",
-        "Try the latest Chrome, Edge, or Safari."
-      );
-    } else {
-      init().catch(console.error);
-    }
+      console.error(error);
+      showError("The game failed to load. Check your connection and reload the game.");
+    });
   </script>
 </body>
 </html>
