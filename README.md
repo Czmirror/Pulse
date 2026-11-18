@@ -51,3 +51,11 @@ python3 -m http.server 8080 --directory web
 ## フォント
 
 画面表示に Inter Regular を使用しています。配布元は cosmic-text 0.12.1 に同梱された Inter で、ライセンスは [SIL Open Font License 1.1](assets/fonts/Inter-LICENSE) です。
+
+## 起動処理の検証
+
+Node.js 22以上で、配信HTML内の起動処理を検証します。
+
+    node --experimental-vm-modules --test tests/startup.test.cjs
+
+ブラウザAPIとゲーム初期化をテスト用に置き換え、読み込み失敗時の案内と再読み込みを確認します。画面の描画とタッチ操作は別途確認が必要です。

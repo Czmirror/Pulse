@@ -23,6 +23,9 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Verify startup recovery
+        run: node --experimental-vm-modules --test tests/startup.test.cjs
+
       - name: Install Rust (stable + wasm32 target)
         uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
