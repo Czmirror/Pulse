@@ -15,6 +15,7 @@ use std::f32::consts::TAU;
 use wasm_bindgen::JsValue;
 use web_sys::{AudioBuffer, AudioBufferSourceNode, AudioContext, GainNode};
 
+use super::volume::validated_volume;
 use super::{AudioConfig, PlaySoundEffect, SetSfxVolume, SoundEffect};
 
 // ── 内部構造体 ────────────────────────────────────────────────────────────────
@@ -262,7 +263,7 @@ fn set_volume_wasm(
     mut events: EventReader<SetSfxVolume>,
 ) {
     for SetSfxVolume(v) in events.read() {
-        let v = v.clamp(0.0, 1.0);
+        let Some(v) = validated_volume(*v) else { continue };
         config.volume = v;
 
         if let Some(audio) = &audio {
@@ -290,9 +291,9 @@ pub fn load_volume_from_storage() -> Option<f32> {
     let window = web_sys::window()?;
     let storage = window.local_storage().ok()??;
     let s = storage.get_item("pulse_sfx_volume").ok()??;
-    let v: f32 = s.parse().ok()?;
+    let v = validated_volume(s.parse().ok()?)?;
     info!("[WASM Audio] localStorage: loaded volume={:.4}", v);
-    Some(v.clamp(0.0, 1.0))
+    Some(v)
 }
 
 // ── ユーティリティ ──────────────────────────────────────────────────────────
