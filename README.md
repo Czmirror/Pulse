@@ -29,7 +29,7 @@ python3 -m http.server 8080 --directory web
 
 - Rust (stable, 1.85+)
 - `wasm32-unknown-unknown` target（スクリプトが自動インストール）
-- `wasm-bindgen-cli`（スクリプトが自動インストール）
+- `wasm-bindgen-cli`（Cargo.lockと一致するバージョンをスクリプトがインストール）
 
 > **ネイティブ Linux ビルドについて**
 > `bevy_audio` は Linux では ALSA を使用するため、ネイティブビルド時は
@@ -59,3 +59,7 @@ Node.js 22以上で、配信HTML内の起動処理を検証します。
     node --experimental-vm-modules --test tests/startup.test.cjs
 
 ブラウザAPIとゲーム初期化をテスト用に置き換え、読み込み失敗時の案内と再読み込みを確認します。画面の描画とタッチ操作は別途確認が必要です。
+
+Webビルドスクリプトの検証は次のコマンドで実行できます。外部のツール導入や通信をテスト用の処理に置き換えて確認します。
+
+    python3 -m unittest discover -s tests -p 'build_web_test.py'
