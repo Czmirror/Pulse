@@ -23,6 +23,9 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Verify Web build script
+        run: python3 -m unittest discover -s tests -p 'build_web_test.py'
+
       - name: Verify startup recovery
         run: node --experimental-vm-modules --test tests/startup.test.cjs
 
@@ -43,19 +46,8 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
 
-      - name: Install wasm-bindgen-cli (version matched to Cargo.toml)
-        run: cargo install wasm-bindgen-cli --version 0.2.114 --locked
-
-      - name: Build WASM (release)
-        run: cargo build --locked --release --target wasm32-unknown-unknown
-
-      - name: Generate JS bindings
-        run: |
-          wasm-bindgen \
-            --out-dir web \
-            --target web \
-            --no-typescript \
-            target/wasm32-unknown-unknown/release/pulse.wasm
+      - name: Build WebAssembly and JS bindings
+        run: ./build_web.sh
 
       - name: Upload Pages artifact
         if: github.ref == 'refs/heads/main'
