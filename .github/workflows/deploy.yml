@@ -32,6 +32,11 @@ jobs:
           toolchain: stable
           targets: wasm32-unknown-unknown
 
+      - name: Verify volume validation
+        run: |
+          rustc --edition=2021 --test src/audio/volume.rs -o /tmp/pulse-volume-tests
+          /tmp/pulse-volume-tests
+
       - name: Cache Cargo registry and build
         if: github.ref == 'refs/heads/main'
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4

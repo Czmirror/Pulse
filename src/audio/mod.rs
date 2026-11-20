@@ -1,4 +1,5 @@
 pub mod events;
+mod volume;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub mod native;

@@ -7,6 +7,7 @@ use bevy::{
 };
 use std::f32::consts::TAU;
 
+use super::volume::validated_volume;
 use super::{AudioConfig, PlaySoundEffect, SetSfxVolume, SoundEffect};
 
 const SAMPLE_RATE: u32 = 44100;
@@ -158,7 +159,8 @@ fn play_sound(
 
 fn set_volume(mut config: ResMut<AudioConfig>, mut events: EventReader<SetSfxVolume>) {
     for SetSfxVolume(v) in events.read() {
-        config.volume = v.clamp(0.0, 1.0);
+        let Some(v) = validated_volume(*v) else { continue };
+        config.volume = v;
         info!("[Native Audio] Volume → {:.2}", config.volume);
     }
 }
