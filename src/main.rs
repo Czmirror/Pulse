@@ -814,6 +814,9 @@ fn handle_input(
     mut commands: Commands,
     mut ev_sfx: EventWriter<PlaySoundEffect>,
 ) {
+    // GameOverへの遷移は次のフレーム。時間切れのフレームでは得点を変更しない。
+    if data.time_left <= 0.0 { return; }
+
     let pressed = mouse.just_pressed(MouseButton::Left)
         || touch.any_just_pressed()
         || keys.just_pressed(KeyCode::Space);
@@ -886,6 +889,9 @@ fn miss_check(
     mut commands: Commands,
     mut ev_sfx: EventWriter<PlaySoundEffect>,
 ) {
+    // 確定済みラウンドで遅れてMISSやコンボ切れを発生させない。
+    if data.time_left <= 0.0 { return; }
+
     for mut pulse in &mut pulses {
         if !pulse.missed && pulse.radius < TARGET_RADIUS - GOOD_WINDOW {
             pulse.missed = true;
